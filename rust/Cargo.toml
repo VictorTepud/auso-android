@@ -1,0 +1,14 @@
+[package]
+name = "auso_core"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "auso_core"
+crate-type = ["cdylib", "staticlib"]
+
+[dependencies]
+jni = "0.21"
+bcrypt = "0.16"
+uuid = { version = "1", features = ["v4"] }
+ammonia = "4"
