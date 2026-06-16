@@ -1,6 +1,8 @@
 package com.auso.social.ui
 
 import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -80,7 +82,7 @@ fun MainScreen(
     // Image picker for post creation
     var postImageUris by remember { mutableStateOf<List<Uri>>(emptyList()) }
     val postImagePicker = rememberLauncherForActivityResult(
-        contract = androidx.activity.result.contract.ActivityResultContracts.GetContent()
+        contract = ActivityResultContracts.GetContent()
     ) { uri ->
         uri?.let { postImageUris = postImageUris + it }
     }
