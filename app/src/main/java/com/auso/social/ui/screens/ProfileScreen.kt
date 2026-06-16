@@ -412,7 +412,7 @@ private fun StatItem(label: String, count: Int) {
 fun EditProfileDialog(
     profile: UserProfile?,
     onDismiss: () -> Unit,
-    onSave: (displayName: String, bio: String, location: String, website: String) -> Unit
+    onSave: (displayName: String?, bio: String?, location: String?, website: String?) -> Unit
 ) {
     var displayName by remember { mutableStateOf(profile?.displayName ?: "") }
     var bio by remember { mutableStateOf(profile?.bio ?: "") }
