@@ -122,6 +122,14 @@ data class CreateTextPostRequest(
     @SerializedName("group_id") val groupId: String? = null
 )
 
+data class CreateImagePackPostRequest(
+    val content: String? = null,
+    @SerializedName("layout_mode") val layoutMode: String? = "carousel",
+    @SerializedName("community_id") val communityId: String? = null,
+    @SerializedName("channel_id") val channelId: String? = null,
+    @SerializedName("group_id") val groupId: String? = null
+)
+
 data class CreatePollRequest(
     val question: String,
     val options: List<String>,
@@ -307,7 +315,11 @@ data class ApiError(
 )
 
 // ========== UPLOAD ==========
-data class UploadResponse(
-    val url: String,
-    @SerializedName("thumbnail_url") val thumbnailUrl: String? = null
+data class UploadUrlResponse(
+    val url: String
+)
+
+data class ImagePostResponse(
+    val post: Post,
+    val images: List<PostImage> = emptyList()
 )

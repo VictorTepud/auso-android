@@ -2,7 +2,6 @@ package com.auso.social.network
 
 import com.auso.social.network.model.*
 import okhttp3.MultipartBody
-import okhttp3.RequestBody
 import retrofit2.Response
 import retrofit2.http.*
 
@@ -45,6 +44,12 @@ interface AusoApi {
     suspend fun createTextPost(
         @Header("Authorization") token: String,
         @Body request: CreateTextPostRequest
+    ): Response<Post>
+
+    @POST("api/v1/posts/image-pack")
+    suspend fun createImagePackPost(
+        @Header("Authorization") token: String,
+        @Body request: CreateImagePackPostRequest
     ): Response<Post>
 
     @GET("api/v1/posts/feed")
@@ -146,33 +151,33 @@ interface AusoApi {
 
     // ========== UPLOAD ==========
     @Multipart
-    @POST("api/v1/upload/image")
-    suspend fun uploadImage(
-        @Header("Authorization") token: String,
-        @Part file: MultipartBody.Part
-    ): Response<UploadResponse>
-
-    @Multipart
-    @PUT("api/v1/users/me/photo")
+    @POST("api/v1/users/me/profile-photo")
     suspend fun uploadProfilePhoto(
         @Header("Authorization") token: String,
         @Part file: MultipartBody.Part
-    ): Response<UserProfile>
+    ): Response<UploadUrlResponse>
 
     @Multipart
-    @PUT("api/v1/users/me/cover")
+    @POST("api/v1/users/me/cover-photo")
     suspend fun uploadCoverPhoto(
         @Header("Authorization") token: String,
         @Part file: MultipartBody.Part
-    ): Response<UserProfile>
+    ): Response<UploadUrlResponse>
 
     @Multipart
-    @POST("api/v1/posts/media")
-    suspend fun createPostWithMedia(
+    @POST("api/v1/posts/image")
+    suspend fun createImagePost(
         @Header("Authorization") token: String,
-        @Part("content") content: RequestBody,
         @Part files: List<MultipartBody.Part>
-    ): Response<PostResponse>
+    ): Response<ImagePostResponse>
+
+    @Multipart
+    @POST("api/v1/posts/{postId}/images")
+    suspend fun addImagesToPost(
+        @Header("Authorization") token: String,
+        @Path("postId") postId: String,
+        @Part files: List<MultipartBody.Part>
+    ): Response<List<PostImage>>
 
     // ========== CHANNELS ==========
     @POST("api/v1/communities/{communityId}/channels")

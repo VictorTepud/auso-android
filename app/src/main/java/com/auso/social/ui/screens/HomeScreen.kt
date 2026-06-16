@@ -2,7 +2,6 @@ package com.auso.social.ui.screens
 
 import android.net.Uri
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -27,13 +26,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.auso.social.network.AusoApiClient
+import com.auso.social.network.model.CreateImagePackPostRequest
 import com.auso.social.network.model.CreateTextPostRequest
-import com.auso.social.network.model.FeedResponse
 import com.auso.social.network.model.PostResponse
 import com.auso.social.viewmodel.AuthViewModel
 import kotlinx.coroutines.launch
-import okhttp3.MediaType.Companion.toMediaTypeOrNull
-import okhttp3.RequestBody.Companion.toRequestBody
 
 /**
  * Home screen - shows the post feed
@@ -290,52 +287,48 @@ fun CreatePostDialog(
                         try {
                             val token = AusoApiClient.getToken()
                             if (token != null) {
-                                if (selectedImages.isNotEmpty()) {
-                                    // Post with media
-                                    val contentBody = content.trim().toRequestBody("text/plain".toMediaTypeOrNull())
-                                    val fileParts = selectedImages.mapNotNull { uri ->
-                                        AusoApiClient.uriToMultipartPart(context, uri)
-                                    }
-                                    if (fileParts.isEmpty()) {
-                                        // Fallback to text-only if file conversion fails
-                                        val request = CreateTextPostRequest(content = content.trim())
-                                        val response = AusoApiClient.api.createTextPost("Bearer $token", request)
-                                        if (response.isSuccessful) {
-                                            onPostCreated()
-                                            onDismiss()
-                                        } else {
-                                            error = "Error al publicar"
-                                        }
-                                    } else {
-                                        val response = AusoApiClient.api.createPostWithMedia(
-                                            "Bearer $token",
-                                            contentBody,
-                                            fileParts
-                                        )
-                                        if (response.isSuccessful) {
-                                            onPostCreated()
-                                            onDismiss()
-                                        } else {
-                                            // Fallback: try text-only post if media endpoint not available
-                                            val request = CreateTextPostRequest(content = content.trim())
-                                            val textResponse = AusoApiClient.api.createTextPost("Bearer $token", request)
-                                            if (textResponse.isSuccessful) {
-                                                onPostCreated()
-                                                onDismiss()
-                                            } else {
-                                                error = "Error al publicar (el servidor no soporta imagenes aun)"
-                                            }
-                                        }
-                                    }
-                                } else {
+                                val textContent = content.trim()
+
+                                if (selectedImages.isEmpty()) {
                                     // Text-only post
-                                    val request = CreateTextPostRequest(content = content.trim())
+                                    val request = CreateTextPostRequest(content = textContent)
                                     val response = AusoApiClient.api.createTextPost("Bearer $token", request)
                                     if (response.isSuccessful) {
                                         onPostCreated()
                                         onDismiss()
                                     } else {
                                         error = "Error al publicar"
+                                    }
+                                } else {
+                                    // Post with images: create image-pack post, then upload images
+                                    val request = CreateImagePackPostRequest(
+                                        content = textContent.ifBlank { null },
+                                        layoutMode = "carousel"
+                                    )
+                                    val postResponse = AusoApiClient.api.createImagePackPost("Bearer $token", request)
+                                    if (postResponse.isSuccessful) {
+                                        val postId = postResponse.body()?.id
+                                        if (postId != null) {
+                                            // Upload images to the post
+                                            val fileParts = selectedImages.mapNotNull { uri ->
+                                                AusoApiClient.uriToMultipartPart(context, uri)
+                                            }
+                                            if (fileParts.isNotEmpty()) {
+                                                try {
+                                                    AusoApiClient.api.addImagesToPost(
+                                                        "Bearer $token",
+                                                        postId,
+                                                        fileParts
+                                                    )
+                                                } catch (_: Exception) {
+                                                    // Images failed to upload but post was created
+                                                }
+                                            }
+                                        }
+                                        onPostCreated()
+                                        onDismiss()
+                                    } else {
+                                        error = "Error al crear publicacion con imagenes"
                                     }
                                 }
                             } else {
