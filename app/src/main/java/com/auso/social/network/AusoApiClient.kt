@@ -75,6 +75,16 @@ object AusoApiClient {
     fun getToken(): String? = authToken
 
     /**
+     * Build a full URL from a relative path, avoiding double slashes
+     */
+    fun fullUrl(path: String?): String? {
+        if (path.isNullOrBlank()) return null
+        val base = baseUrl.trimEnd('/')
+        val relative = path.trimStart('/')
+        return "$base/$relative"
+    }
+
+    /**
      * Convert a content URI to a MultipartBody.Part for file uploads
      */
     fun uriToMultipartPart(context: Context, uri: Uri, paramName: String = "file"): MultipartBody.Part? {

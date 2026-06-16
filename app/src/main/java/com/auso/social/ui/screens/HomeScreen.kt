@@ -406,7 +406,7 @@ fun PostCard(
                 ) {
                     if (!postResponse.authorProfilePhoto.isNullOrBlank()) {
                         AsyncImage(
-                            model = "${AusoApiClient.baseUrl}${postResponse.authorProfilePhoto}",
+                            model = AusoApiClient.fullUrl(postResponse.authorProfilePhoto),
                             contentDescription = "Avatar",
                             modifier = Modifier.fillMaxSize(),
                             contentScale = ContentScale.Crop
@@ -467,7 +467,7 @@ fun PostCard(
                     images.size == 1 -> {
                         // Single image - full width
                         AsyncImage(
-                            model = "${AusoApiClient.baseUrl}${images[0].imageUrl}",
+                            model = AusoApiClient.fullUrl(images[0].imageUrl),
                             contentDescription = "Imagen del post",
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -484,7 +484,7 @@ fun PostCard(
                         ) {
                             images.forEach { img ->
                                 AsyncImage(
-                                    model = "${AusoApiClient.baseUrl}${img.imageUrl}",
+                                    model = AusoApiClient.fullUrl(img.imageUrl),
                                     contentDescription = "Imagen del post",
                                     modifier = Modifier
                                         .weight(1f)
@@ -508,7 +508,7 @@ fun PostCard(
                             ) {
                                 images.take(2).forEach { img ->
                                     AsyncImage(
-                                        model = "${AusoApiClient.baseUrl}${img.imageUrl}",
+                                        model = AusoApiClient.fullUrl(img.imageUrl),
                                         contentDescription = "Imagen del post",
                                         modifier = Modifier
                                             .weight(1f)
@@ -529,7 +529,7 @@ fun PostCard(
                                             modifier = Modifier.weight(1f)
                                         ) {
                                             AsyncImage(
-                                                model = "${AusoApiClient.baseUrl}${img.imageUrl}",
+                                                model = AusoApiClient.fullUrl(img.imageUrl),
                                                 contentDescription = "Imagen del post",
                                                 modifier = Modifier
                                                     .fillMaxWidth()

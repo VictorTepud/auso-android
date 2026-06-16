@@ -242,7 +242,7 @@ fun ProfileScreen(
                             }
                             !coverUrl.isNullOrBlank() -> {
                                 AsyncImage(
-                                    model = "${AusoApiClient.baseUrl}$coverUrl",
+                                    model = AusoApiClient.fullUrl(coverUrl),
                                     contentDescription = "Portada",
                                     modifier = Modifier.fillMaxSize(),
                                     contentScale = ContentScale.Crop
@@ -299,7 +299,7 @@ fun ProfileScreen(
                                 }
                                 !photoUrl.isNullOrBlank() -> {
                                     AsyncImage(
-                                        model = "${AusoApiClient.baseUrl}$photoUrl",
+                                        model = AusoApiClient.fullUrl(photoUrl),
                                         contentDescription = "Foto de perfil",
                                         modifier = Modifier.fillMaxSize(),
                                         contentScale = ContentScale.Crop
