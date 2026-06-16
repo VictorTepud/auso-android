@@ -36,7 +36,6 @@ fun AUSOApp() {
 
     val isLoggedIn by authViewModel.isLoggedIn.collectAsState()
 
-    // Determine start destination based on login state
     val startDestination = if (isLoggedIn) Routes.MAIN else Routes.LOGIN
 
     NavHost(
@@ -45,8 +44,18 @@ fun AUSOApp() {
     ) {
         composable(
             route = Routes.LOGIN,
-            exitTransition = { slideOutOfLeaf(towards = AnimatedContentTransitionScope.SlideDirection.Left, animationSpec = tween(300)) },
-            popEnterTransition = { slideIntoLeaf(towards = AnimatedContentTransitionScope.SlideDirection.Right, animationSpec = tween(300)) }
+            exitTransition = {
+                slideOutOfContainer(
+                    towards = AnimatedContentTransitionScope.SlideDirection.Left,
+                    animationSpec = tween(300)
+                )
+            },
+            popEnterTransition = {
+                slideIntoContainer(
+                    towards = AnimatedContentTransitionScope.SlideDirection.Right,
+                    animationSpec = tween(300)
+                )
+            }
         ) {
             LoginScreen(
                 authViewModel = authViewModel,
@@ -63,10 +72,30 @@ fun AUSOApp() {
 
         composable(
             route = Routes.REGISTER,
-            enterTransition = { slideIntoContainer(towards = AnimatedContentTransitionScope.SlideDirection.Left, animationSpec = tween(300)) },
-            exitTransition = { slideOutOfContainer(towards = AnimatedContentTransitionScope.SlideDirection.Left, animationSpec = tween(300)) },
-            popEnterTransition = { slideIntoContainer(towards = AnimatedContentTransitionScope.SlideDirection.Right, animationSpec = tween(300)) },
-            popExitTransition = { slideOutOfContainer(towards = AnimatedContentTransitionScope.SlideDirection.Right, animationSpec = tween(300)) }
+            enterTransition = {
+                slideIntoContainer(
+                    towards = AnimatedContentTransitionScope.SlideDirection.Left,
+                    animationSpec = tween(300)
+                )
+            },
+            exitTransition = {
+                slideOutOfContainer(
+                    towards = AnimatedContentTransitionScope.SlideDirection.Left,
+                    animationSpec = tween(300)
+                )
+            },
+            popEnterTransition = {
+                slideIntoContainer(
+                    towards = AnimatedContentTransitionScope.SlideDirection.Right,
+                    animationSpec = tween(300)
+                )
+            },
+            popExitTransition = {
+                slideOutOfContainer(
+                    towards = AnimatedContentTransitionScope.SlideDirection.Right,
+                    animationSpec = tween(300)
+                )
+            }
         ) {
             RegisterScreen(
                 authViewModel = authViewModel,

@@ -20,12 +20,10 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.auso.social.viewmodel.AuthUiState
 import com.auso.social.viewmodel.AuthViewModel
 
-/**
- * Registration screen for AUSO
- */
 @Composable
 fun RegisterScreen(
     authViewModel: AuthViewModel,
@@ -41,7 +39,6 @@ fun RegisterScreen(
     var passwordVisible by remember { mutableStateOf(false) }
     val focusManager = LocalFocusManager.current
 
-    // Handle success navigation
     LaunchedEffect(uiState) {
         if (uiState is AuthUiState.Success) {
             onRegisterSuccess()
@@ -56,7 +53,6 @@ fun RegisterScreen(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        // Brand
         Text(
             text = "AUSO",
             style = MaterialTheme.typography.displayLarge,
@@ -82,7 +78,6 @@ fun RegisterScreen(
 
         Spacer(modifier = Modifier.height(32.dp))
 
-        // Username field
         OutlinedTextField(
             value = username,
             onValueChange = { username = it },
@@ -106,7 +101,6 @@ fun RegisterScreen(
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        // Email field
         OutlinedTextField(
             value = email,
             onValueChange = { email = it },
@@ -131,7 +125,6 @@ fun RegisterScreen(
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        // Password field
         OutlinedTextField(
             value = password,
             onValueChange = { password = it },
@@ -166,7 +159,6 @@ fun RegisterScreen(
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        // Error message
         AnimatedVisibility(visible = uiState is AuthUiState.Error) {
             val errorMsg = (uiState as? AuthUiState.Error)?.message ?: ""
             Card(
@@ -185,7 +177,6 @@ fun RegisterScreen(
             Spacer(modifier = Modifier.height(16.dp))
         }
 
-        // Register button
         Button(
             onClick = { authViewModel.register(email.trim(), password, username.trim()) },
             modifier = Modifier
@@ -215,7 +206,6 @@ fun RegisterScreen(
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        // Navigate to login
         Row(
             horizontalArrangement = Arrangement.Center,
             verticalAlignment = Alignment.CenterVertically
@@ -239,5 +229,3 @@ fun RegisterScreen(
         }
     }
 }
-
-private val Int.sp get() = androidx.compose.ui.unit.sp(this.toFloat())

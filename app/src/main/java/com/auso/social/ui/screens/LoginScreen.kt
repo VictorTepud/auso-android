@@ -1,7 +1,6 @@
 package com.auso.social.ui.screens
 
 import androidx.compose.animation.*
-import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.text.KeyboardActions
@@ -13,7 +12,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
@@ -21,14 +19,11 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.auso.social.viewmodel.AuthUiState
 import com.auso.social.viewmodel.AuthViewModel
 
-/**
- * Login screen for AUSO
- */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LoginScreen(
@@ -43,7 +38,6 @@ fun LoginScreen(
     var passwordVisible by remember { mutableStateOf(false) }
     val focusManager = LocalFocusManager.current
 
-    // Handle success navigation
     LaunchedEffect(uiState) {
         if (uiState is AuthUiState.Success) {
             onLoginSuccess()
@@ -58,7 +52,6 @@ fun LoginScreen(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        // Logo / Brand
         Text(
             text = "AUSO",
             style = MaterialTheme.typography.displayLarge,
@@ -84,7 +77,6 @@ fun LoginScreen(
 
         Spacer(modifier = Modifier.height(40.dp))
 
-        // Email field
         OutlinedTextField(
             value = email,
             onValueChange = { email = it },
@@ -109,7 +101,6 @@ fun LoginScreen(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Password field
         OutlinedTextField(
             value = password,
             onValueChange = { password = it },
@@ -146,7 +137,6 @@ fun LoginScreen(
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        // Error message
         AnimatedVisibility(visible = uiState is AuthUiState.Error) {
             val errorMsg = (uiState as? AuthUiState.Error)?.message ?: ""
             Card(
@@ -165,7 +155,6 @@ fun LoginScreen(
             Spacer(modifier = Modifier.height(16.dp))
         }
 
-        // Login button
         Button(
             onClick = { authViewModel.login(email.trim(), password) },
             modifier = Modifier
@@ -195,7 +184,6 @@ fun LoginScreen(
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        // Navigate to register
         Row(
             horizontalArrangement = Arrangement.Center,
             verticalAlignment = Alignment.CenterVertically
@@ -219,6 +207,3 @@ fun LoginScreen(
         }
     }
 }
-
-// Extension to get sp from number
-private val Int.sp get() = androidx.compose.ui.unit.sp(this.toFloat())

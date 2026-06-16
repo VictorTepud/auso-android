@@ -215,11 +215,9 @@ fun PostCard(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             LinearProgressIndicator(
-                                progress = {
-                                    if (postResponse.poll.totalVotes > 0)
-                                        opt.votesCount.toFloat() / postResponse.poll.totalVotes.toFloat()
-                                    else 0f
-                                },
+                                progress = if (postResponse.poll.totalVotes > 0)
+                                    opt.votesCount.toFloat() / postResponse.poll.totalVotes.toFloat()
+                                else 0f,
                                 modifier = Modifier
                                     .weight(1f)
                                     .height(6.dp)

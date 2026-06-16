@@ -18,6 +18,7 @@ import androidx.compose.ui.unit.dp
 /**
  * Apps screen - more tools and features
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AppsScreen() {
     val tools = listOf(
