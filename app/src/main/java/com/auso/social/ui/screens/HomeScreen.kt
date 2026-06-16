@@ -4,14 +4,12 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.ChatBubbleOutline
-import androidx.compose.material.icons.outlined.Create
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -28,7 +26,8 @@ import com.auso.social.viewmodel.AuthViewModel
 import kotlinx.coroutines.launch
 
 /**
- * Home screen - shows the post feed with ability to create posts
+ * Home screen - shows the post feed
+ * FAB is handled by MainScreen
  */
 @Composable
 fun HomeScreen(
@@ -53,7 +52,7 @@ fun HomeScreen(
                 }
             }
         } catch (e: Exception) {
-            // Silently fail - show empty state
+            // Silently fail
         }
         isLoading = false
     }
@@ -79,7 +78,6 @@ fun HomeScreen(
                 )
             }
         } else if (posts.isEmpty()) {
-            // Empty state
             Column(
                 modifier = Modifier
                     .fillMaxSize()
@@ -117,7 +115,10 @@ fun HomeScreen(
                     .background(MaterialTheme.colorScheme.background)
                     .padding(horizontal = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
-                contentPadding = PaddingValues(vertical = 12.dp)
+                contentPadding = PaddingValues(
+                    top = 12.dp,
+                    bottom = 80.dp // Space for FAB above bottom bar
+                )
             ) {
                 items(posts, key = { it.post.id }) { postResponse ->
                     PostCard(
@@ -132,7 +133,6 @@ fun HomeScreen(
                                             postResponse.post.id
                                         )
                                         if (response.isSuccessful) {
-                                            // Refresh feed
                                             val feedResponse = AusoApiClient.api.getFeed("Bearer $token")
                                             if (feedResponse.isSuccessful) {
                                                 posts = feedResponse.body()?.posts ?: emptyList()
@@ -147,26 +147,13 @@ fun HomeScreen(
                 }
             }
         }
-
-        // FAB for creating posts
-        FloatingActionButton(
-            onClick = { showCreateDialog = true },
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .padding(16.dp),
-            containerColor = MaterialTheme.colorScheme.primary,
-            contentColor = MaterialTheme.colorScheme.onPrimary
-        ) {
-            Icon(Icons.Outlined.Create, contentDescription = "Crear post")
-        }
     }
 
-    // Create post dialog
+    // Create post dialog - triggered externally if needed
     if (showCreateDialog) {
         CreatePostDialog(
             onDismiss = { showCreateDialog = false },
             onPostCreated = {
-                // Refresh feed
                 coroutineScope.launch {
                     try {
                         val token = AusoApiClient.getToken()
@@ -181,6 +168,12 @@ fun HomeScreen(
             }
         )
     }
+}
+
+// Public function to show create post dialog from MainScreen FAB
+@Composable
+fun rememberCreatePostState(): MutableState<Boolean> {
+    return remember { mutableStateOf(false) }
 }
 
 @Composable
@@ -317,7 +310,6 @@ fun PostCard(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                // Avatar - use profile photo if available
                 Box(
                     modifier = Modifier
                         .size(40.dp)
@@ -371,7 +363,7 @@ fun PostCard(
                 )
             }
 
-            // Images
+            // Images chip
             if (postResponse.images.isNotEmpty()) {
                 Spacer(modifier = Modifier.height(12.dp))
                 AssistChip(
@@ -381,7 +373,7 @@ fun PostCard(
                 )
             }
 
-            // Video indicator
+            // Video chip
             if (post.postType == "video") {
                 Spacer(modifier = Modifier.height(12.dp))
                 AssistChip(
@@ -391,7 +383,7 @@ fun PostCard(
                 )
             }
 
-            // Poll indicator
+            // Poll
             if (post.postType == "poll" && postResponse.poll != null) {
                 Spacer(modifier = Modifier.height(12.dp))
                 Column {
@@ -433,13 +425,12 @@ fun PostCard(
                 }
             }
 
-            // Action row
+            // Actions
             Spacer(modifier = Modifier.height(12.dp))
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(24.dp)
             ) {
-                // Like
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.clip(RoundedCornerShape(8.dp))
@@ -460,7 +451,6 @@ fun PostCard(
                     )
                 }
 
-                // Comments
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.clip(RoundedCornerShape(8.dp))
