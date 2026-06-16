@@ -18,11 +18,6 @@ android {
         vectorDrawables {
             useSupportLibrary = true
         }
-
-        // Rust NDK support
-        ndk {
-            abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")
-        }
     }
 
     buildTypes {
@@ -55,13 +50,6 @@ android {
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
-        }
-    }
-
-    // Rust .so library location
-    sourceSets {
-        getByName("main") {
-            jniLibs.srcDirs("src/main/jniLibs")
         }
     }
 }
