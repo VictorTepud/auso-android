@@ -1,6 +1,8 @@
 package com.auso.social.network
 
 import com.auso.social.network.model.*
+import okhttp3.MultipartBody
+import okhttp3.RequestBody
 import retrofit2.Response
 import retrofit2.http.*
 
@@ -141,6 +143,36 @@ interface AusoApi {
         @Header("Authorization") token: String,
         @Path("userId") userId: String
     ): Response<FollowResponse>
+
+    // ========== UPLOAD ==========
+    @Multipart
+    @POST("api/v1/upload/image")
+    suspend fun uploadImage(
+        @Header("Authorization") token: String,
+        @Part file: MultipartBody.Part
+    ): Response<UploadResponse>
+
+    @Multipart
+    @PUT("api/v1/users/me/photo")
+    suspend fun uploadProfilePhoto(
+        @Header("Authorization") token: String,
+        @Part file: MultipartBody.Part
+    ): Response<UserProfile>
+
+    @Multipart
+    @PUT("api/v1/users/me/cover")
+    suspend fun uploadCoverPhoto(
+        @Header("Authorization") token: String,
+        @Part file: MultipartBody.Part
+    ): Response<UserProfile>
+
+    @Multipart
+    @POST("api/v1/posts/media")
+    suspend fun createPostWithMedia(
+        @Header("Authorization") token: String,
+        @Part("content") content: RequestBody,
+        @Part files: List<MultipartBody.Part>
+    ): Response<PostResponse>
 
     // ========== CHANNELS ==========
     @POST("api/v1/communities/{communityId}/channels")

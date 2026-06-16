@@ -1,5 +1,6 @@
 package com.auso.social.ui
 
+import android.net.Uri
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -26,6 +27,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -73,6 +75,15 @@ fun MainScreen(
     var selectedBottomTab by remember { mutableIntStateOf(0) }
     var showProfileScreen by remember { mutableStateOf(false) }
     var showCreatePostDialog by remember { mutableStateOf(false) }
+    var refreshTrigger by remember { mutableIntStateOf(0) }
+
+    // Image picker for post creation
+    var postImageUris by remember { mutableStateOf<List<Uri>>(emptyList()) }
+    val postImagePicker = rememberLauncherForActivityResult(
+        contract = androidx.activity.result.contract.ActivityResultContracts.GetContent()
+    ) { uri ->
+        uri?.let { postImageUris = postImageUris + it }
+    }
 
     // Profile screen overlay
     if (showProfileScreen) {
@@ -230,7 +241,7 @@ fun MainScreen(
             }
         },
         bottomBar = {
-            // Translucent bottom navigation
+            // Transparent bottom navigation - no background, no indicator highlight
             NavigationBar(
                 containerColor = Color.Transparent,
                 tonalElevation = 0.dp,
@@ -253,7 +264,7 @@ fun MainScreen(
                         selected = selected,
                         onClick = { selectedBottomTab = index },
                         colors = NavigationBarItemDefaults.colors(
-                            indicatorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+                            indicatorColor = Color.Transparent // Remove the pill highlight behind active icon
                         )
                     )
                 }
@@ -274,7 +285,8 @@ fun MainScreen(
                     ) { page ->
                         HomeScreen(
                             tabName = feedTabs[page],
-                            authViewModel = authViewModel
+                            authViewModel = authViewModel,
+                            refreshTrigger = refreshTrigger
                         )
                     }
                 }
@@ -283,22 +295,24 @@ fun MainScreen(
                 3 -> AppsScreen()
             }
 
-            // FAB positioned above bottom bar
-            FloatingActionButton(
-                onClick = { showCreatePostDialog = true },
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(
-                        end = 16.dp,
-                        bottom = 16.dp
-                    ),
-                containerColor = MaterialTheme.colorScheme.primary,
-                contentColor = MaterialTheme.colorScheme.onPrimary
-            ) {
-                Icon(
-                    Icons.Filled.Add,
-                    contentDescription = "Crear post"
-                )
+            // FAB only on Home tab, positioned above bottom bar
+            if (selectedBottomTab == 0) {
+                FloatingActionButton(
+                    onClick = { showCreatePostDialog = true },
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(
+                            end = 16.dp,
+                            bottom = innerPadding.calculateBottomPadding() + 16.dp
+                        ),
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary
+                ) {
+                    Icon(
+                        Icons.Filled.Add,
+                        contentDescription = "Crear post"
+                    )
+                }
             }
         }
     }
@@ -306,10 +320,16 @@ fun MainScreen(
     // Create post dialog
     if (showCreatePostDialog) {
         CreatePostDialog(
-            onDismiss = { showCreatePostDialog = false },
+            onDismiss = {
+                showCreatePostDialog = false
+                postImageUris = emptyList()
+            },
             onPostCreated = {
-                // Trigger refresh in HomeScreen
-            }
+                refreshTrigger++
+            },
+            selectedImages = postImageUris,
+            onAddImage = { postImagePicker.launch("image/*") },
+            onRemoveImage = { uri -> postImageUris = postImageUris - uri }
         )
     }
 }

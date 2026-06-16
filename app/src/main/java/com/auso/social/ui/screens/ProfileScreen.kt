@@ -22,6 +22,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -43,11 +44,17 @@ fun ProfileScreen(
 ) {
     val currentUser by authViewModel.currentUser.collectAsState()
     val coroutineScope = rememberCoroutineScope()
+    val context = LocalContext.current
 
     var profile by remember { mutableStateOf<UserProfile?>(currentUser) }
     var posts by remember { mutableStateOf<List<PostResponse>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
     var showEditDialog by remember { mutableStateOf(false) }
+    var uploadError by remember { mutableStateOf("") }
+
+    // Local URIs for preview before upload
+    var localProfilePhotoUri by remember { mutableStateOf<Uri?>(null) }
+    var localCoverPhotoUri by remember { mutableStateOf<Uri?>(null) }
 
     // Load profile and user posts
     LaunchedEffect(Unit) {
@@ -78,7 +85,33 @@ fun ProfileScreen(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
         if (uri != null) {
-            // TODO: Upload profile photo via API
+            localProfilePhotoUri = uri
+            // Upload profile photo
+            coroutineScope.launch {
+                try {
+                    val token = AusoApiClient.getToken()
+                    if (token != null) {
+                        val part = AusoApiClient.uriToMultipartPart(context, uri)
+                        if (part != null) {
+                            val response = AusoApiClient.api.uploadProfilePhoto("Bearer $token", part)
+                            if (response.isSuccessful) {
+                                // Reload profile to get updated photo URL
+                                val profileResponse = AusoApiClient.api.getMyProfile("Bearer $token")
+                                if (profileResponse.isSuccessful) {
+                                    profile = profileResponse.body()?.user
+                                    authViewModel.loadProfile()
+                                }
+                                localProfilePhotoUri = null
+                            } else {
+                                uploadError = "Error al subir foto de perfil (el servidor podria no soportarlo aun)"
+                                // Keep local preview anyway
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    uploadError = "Error de conexion al subir foto"
+                }
+            }
         }
     }
 
@@ -86,7 +119,32 @@ fun ProfileScreen(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
         if (uri != null) {
-            // TODO: Upload cover photo via API
+            localCoverPhotoUri = uri
+            // Upload cover photo
+            coroutineScope.launch {
+                try {
+                    val token = AusoApiClient.getToken()
+                    if (token != null) {
+                        val part = AusoApiClient.uriToMultipartPart(context, uri)
+                        if (part != null) {
+                            val response = AusoApiClient.api.uploadCoverPhoto("Bearer $token", part)
+                            if (response.isSuccessful) {
+                                // Reload profile to get updated photo URL
+                                val profileResponse = AusoApiClient.api.getMyProfile("Bearer $token")
+                                if (profileResponse.isSuccessful) {
+                                    profile = profileResponse.body()?.user
+                                    authViewModel.loadProfile()
+                                }
+                                localCoverPhotoUri = null
+                            } else {
+                                uploadError = "Error al subir foto de portada (el servidor podria no soportarlo aun)"
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    uploadError = "Error de conexion al subir portada"
+                }
+            }
         }
     }
 
@@ -144,6 +202,22 @@ fun ProfileScreen(
                     .padding(innerPadding)
                     .background(MaterialTheme.colorScheme.background)
             ) {
+                // Upload error message
+                if (uploadError.isNotBlank()) {
+                    item {
+                        Snackbar(
+                            modifier = Modifier.padding(16.dp),
+                            action = {
+                                TextButton(onClick = { uploadError = "" }) {
+                                    Text("OK")
+                                }
+                            }
+                        ) {
+                            Text(uploadError, style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                }
+
                 // Cover photo
                 item {
                     Box(
@@ -154,14 +228,26 @@ fun ProfileScreen(
                             .clickable { coverPhotoLauncher.launch("image/*") },
                         contentAlignment = Alignment.BottomCenter
                     ) {
+                        // Show local preview or server image
+                        val coverUri = localCoverPhotoUri
                         val coverUrl = profile?.coverPhotoUrl
-                        if (!coverUrl.isNullOrBlank()) {
-                            AsyncImage(
-                                model = "${AusoApiClient.baseUrl}$coverUrl",
-                                contentDescription = "Portada",
-                                modifier = Modifier.fillMaxSize(),
-                                contentScale = ContentScale.Crop
-                            )
+                        when {
+                            coverUri != null -> {
+                                AsyncImage(
+                                    model = coverUri,
+                                    contentDescription = "Portada",
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentScale = ContentScale.Crop
+                                )
+                            }
+                            !coverUrl.isNullOrBlank() -> {
+                                AsyncImage(
+                                    model = "${AusoApiClient.baseUrl}$coverUrl",
+                                    contentDescription = "Portada",
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentScale = ContentScale.Crop
+                                )
+                            }
                         }
                         // Camera icon overlay
                         Box(
@@ -199,22 +285,35 @@ fun ProfileScreen(
                                 .clickable { profilePhotoLauncher.launch("image/*") },
                             contentAlignment = Alignment.Center
                         ) {
+                            // Show local preview, server image, or initial
+                            val photoUri = localProfilePhotoUri
                             val photoUrl = profile?.profilePhotoUrl
-                            if (!photoUrl.isNullOrBlank()) {
-                                AsyncImage(
-                                    model = "${AusoApiClient.baseUrl}$photoUrl",
-                                    contentDescription = "Foto de perfil",
-                                    modifier = Modifier.fillMaxSize(),
-                                    contentScale = ContentScale.Crop
-                                )
-                            } else {
-                                val initial = (profile?.displayName ?: "U").take(1).uppercase()
-                                Text(
-                                    text = initial,
-                                    color = MaterialTheme.colorScheme.onPrimary,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 32.sp
-                                )
+                            when {
+                                photoUri != null -> {
+                                    AsyncImage(
+                                        model = photoUri,
+                                        contentDescription = "Foto de perfil",
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentScale = ContentScale.Crop
+                                    )
+                                }
+                                !photoUrl.isNullOrBlank() -> {
+                                    AsyncImage(
+                                        model = "${AusoApiClient.baseUrl}$photoUrl",
+                                        contentDescription = "Foto de perfil",
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentScale = ContentScale.Crop
+                                    )
+                                }
+                                else -> {
+                                    val initial = (profile?.displayName ?: "U").take(1).uppercase()
+                                    Text(
+                                        text = initial,
+                                        color = MaterialTheme.colorScheme.onPrimary,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 32.sp
+                                    )
+                                }
                             }
                             // Camera overlay
                             Box(
@@ -264,7 +363,7 @@ fun ProfileScreen(
                         if (!profile?.location.isNullOrBlank()) {
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(
-                                text = "📍 ${profile?.location}",
+                                text = "${profile?.location}",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -272,7 +371,7 @@ fun ProfileScreen(
                         if (!profile?.website.isNullOrBlank()) {
                             Spacer(modifier = Modifier.height(2.dp))
                             Text(
-                                text = "🔗 ${profile?.website}",
+                                text = profile?.website ?: "",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.primary
                             )
@@ -308,7 +407,7 @@ fun ProfileScreen(
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
                             Text(
-                                text = "Aún no tienes publicaciones",
+                                text = "Aun no tienes publicaciones",
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 style = MaterialTheme.typography.bodyLarge
                             )
@@ -351,7 +450,7 @@ fun ProfileScreen(
                         ),
                         shape = RoundedCornerShape(12.dp)
                     ) {
-                        Text("Cerrar sesión")
+                        Text("Cerrar sesion")
                     }
                     Spacer(modifier = Modifier.height(32.dp))
                 }
@@ -381,6 +480,7 @@ fun ProfileScreen(
                                 val profileResponse = AusoApiClient.api.getMyProfile("Bearer $token")
                                 if (profileResponse.isSuccessful) {
                                     profile = profileResponse.body()?.user
+                                    authViewModel.loadProfile()
                                 }
                             }
                         }
@@ -463,7 +563,7 @@ fun EditProfileDialog(
                 OutlinedTextField(
                     value = location,
                     onValueChange = { location = it },
-                    label = { Text("Ubicación") },
+                    label = { Text("Ubicacion") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                     colors = OutlinedTextFieldDefaults.colors(

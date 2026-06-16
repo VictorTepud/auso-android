@@ -1,46 +1,56 @@
 package com.auso.social.ui.screens
 
+import android.net.Uri
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.ChatBubbleOutline
+import androidx.compose.material.icons.filled.Image
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import coil.compose.AsyncImage
 import com.auso.social.network.AusoApiClient
 import com.auso.social.network.model.CreateTextPostRequest
 import com.auso.social.network.model.FeedResponse
 import com.auso.social.network.model.PostResponse
 import com.auso.social.viewmodel.AuthViewModel
 import kotlinx.coroutines.launch
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
+import okhttp3.RequestBody.Companion.toRequestBody
 
 /**
  * Home screen - shows the post feed
- * FAB is handled by MainScreen
+ * FAB and create post dialog are handled by MainScreen
  */
 @Composable
 fun HomeScreen(
     tabName: String = "Amigos",
-    authViewModel: AuthViewModel? = null
+    authViewModel: AuthViewModel? = null,
+    refreshTrigger: Int = 0
 ) {
     var posts by remember { mutableStateOf<List<PostResponse>>(emptyList()) }
     var isLoading by remember { mutableStateOf(false) }
-    var showCreateDialog by remember { mutableStateOf(false) }
     val coroutineScope = rememberCoroutineScope()
 
-    // Load feed
-    LaunchedEffect(tabName) {
+    // Load feed - re-execute when tabName or refreshTrigger changes
+    LaunchedEffect(tabName, refreshTrigger) {
         isLoading = true
         try {
             val token = AusoApiClient.getToken()
@@ -86,12 +96,12 @@ fun HomeScreen(
                 verticalArrangement = Arrangement.Center
             ) {
                 Text(
-                    text = "🏠",
+                    text = "\uD83C\uDFE0",
                     style = MaterialTheme.typography.displayLarge
                 )
                 Spacer(modifier = Modifier.height(16.dp))
                 Text(
-                    text = "¡Bienvenido a AUSO!",
+                    text = "Bienvenido a AUSO!",
                     style = MaterialTheme.typography.headlineMedium,
                     color = MaterialTheme.colorScheme.onBackground,
                     fontWeight = FontWeight.Bold
@@ -99,10 +109,10 @@ fun HomeScreen(
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
                     text = when (tabName) {
-                        "Amigos" -> "Sigue a usuarios para ver sus publicaciones aquí"
-                        "Recomendado" -> "Las publicaciones recomendadas aparecerán aquí"
+                        "Amigos" -> "Sigue a usuarios para ver sus publicaciones aqui"
+                        "Recomendado" -> "Las publicaciones recomendadas apareceran aqui"
                         "Explorar" -> "Explora publicaciones de toda la comunidad"
-                        else -> "Sigue a usuarios para ver sus publicaciones aquí"
+                        else -> "Sigue a usuarios para ver sus publicaciones aqui"
                     },
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -117,7 +127,7 @@ fun HomeScreen(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
                 contentPadding = PaddingValues(
                     top = 12.dp,
-                    bottom = 80.dp // Space for FAB above bottom bar
+                    bottom = 88.dp // Space for FAB above bottom bar
                 )
             ) {
                 items(posts, key = { it.post.id }) { postResponse ->
@@ -133,9 +143,13 @@ fun HomeScreen(
                                             postResponse.post.id
                                         )
                                         if (response.isSuccessful) {
-                                            val feedResponse = AusoApiClient.api.getFeed("Bearer $token")
-                                            if (feedResponse.isSuccessful) {
-                                                posts = feedResponse.body()?.posts ?: emptyList()
+                                            // Update locally instead of full refresh
+                                            val newLiked = response.body()?.liked ?: !postResponse.isLiked
+                                            val newCount = response.body()?.likesCount ?: postResponse.likesCount
+                                            posts = posts.map {
+                                                if (it.post.id == postResponse.post.id) {
+                                                    it.copy(isLiked = newLiked, likesCount = newCount)
+                                                } else it
                                             }
                                         }
                                     }
@@ -148,49 +162,27 @@ fun HomeScreen(
             }
         }
     }
-
-    // Create post dialog - triggered externally if needed
-    if (showCreateDialog) {
-        CreatePostDialog(
-            onDismiss = { showCreateDialog = false },
-            onPostCreated = {
-                coroutineScope.launch {
-                    try {
-                        val token = AusoApiClient.getToken()
-                        if (token != null) {
-                            val response = AusoApiClient.api.getFeed("Bearer $token")
-                            if (response.isSuccessful) {
-                                posts = response.body()?.posts ?: emptyList()
-                            }
-                        }
-                    } catch (_: Exception) {}
-                }
-            }
-        )
-    }
-}
-
-// Public function to show create post dialog from MainScreen FAB
-@Composable
-fun rememberCreatePostState(): MutableState<Boolean> {
-    return remember { mutableStateOf(false) }
 }
 
 @Composable
 fun CreatePostDialog(
     onDismiss: () -> Unit,
-    onPostCreated: () -> Unit
+    onPostCreated: () -> Unit,
+    selectedImages: List<Uri> = emptyList(),
+    onAddImage: () -> Unit = {},
+    onRemoveImage: (Uri) -> Unit = {}
 ) {
     var content by remember { mutableStateOf("") }
     var isPosting by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf("") }
     val coroutineScope = rememberCoroutineScope()
+    val context = LocalContext.current
 
     AlertDialog(
         onDismissRequest = { if (!isPosting) onDismiss() },
         title = {
             Text(
-                text = "Crear publicación",
+                text = "Crear publicacion",
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface
             )
@@ -203,7 +195,7 @@ fun CreatePostDialog(
                         content = it
                         error = ""
                     },
-                    placeholder = { Text("¿Qué estás pensando?") },
+                    placeholder = { Text("Que estas pensando?") },
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(120.dp),
@@ -215,6 +207,67 @@ fun CreatePostDialog(
                     ),
                     shape = RoundedCornerShape(12.dp)
                 )
+
+                // Selected images thumbnails
+                if (selectedImages.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(selectedImages) { uri ->
+                            Box(modifier = Modifier.size(80.dp)) {
+                                AsyncImage(
+                                    model = uri,
+                                    contentDescription = "Imagen seleccionada",
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .clip(RoundedCornerShape(8.dp)),
+                                    contentScale = ContentScale.Crop
+                                )
+                                // Remove button
+                                IconButton(
+                                    onClick = { onRemoveImage(uri) },
+                                    modifier = Modifier
+                                        .align(Alignment.TopEnd)
+                                        .size(24.dp)
+                                        .background(
+                                            MaterialTheme.colorScheme.surface.copy(alpha = 0.8f),
+                                            CircleShape
+                                        )
+                                ) {
+                                    Icon(
+                                        Icons.Filled.Close,
+                                        contentDescription = "Quitar imagen",
+                                        modifier = Modifier.size(14.dp),
+                                        tint = MaterialTheme.colorScheme.onSurface
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Add image button
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedButton(
+                    onClick = onAddImage,
+                    enabled = !isPosting,
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = MaterialTheme.colorScheme.primary
+                    )
+                ) {
+                    Icon(
+                        Icons.Filled.Image,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        if (selectedImages.isEmpty()) "Agregar imagen" else "Agregar otra imagen"
+                    )
+                }
+
                 if (error.isNotBlank()) {
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
@@ -228,8 +281,8 @@ fun CreatePostDialog(
         confirmButton = {
             TextButton(
                 onClick = {
-                    if (content.isBlank()) {
-                        error = "Escribe algo para publicar"
+                    if (content.isBlank() && selectedImages.isEmpty()) {
+                        error = "Escribe algo o agrega una imagen"
                         return@TextButton
                     }
                     isPosting = true
@@ -237,19 +290,59 @@ fun CreatePostDialog(
                         try {
                             val token = AusoApiClient.getToken()
                             if (token != null) {
-                                val request = CreateTextPostRequest(content = content.trim())
-                                val response = AusoApiClient.api.createTextPost("Bearer $token", request)
-                                if (response.isSuccessful) {
-                                    onPostCreated()
-                                    onDismiss()
+                                if (selectedImages.isNotEmpty()) {
+                                    // Post with media
+                                    val contentBody = content.trim().toRequestBody("text/plain".toMediaTypeOrNull())
+                                    val fileParts = selectedImages.mapNotNull { uri ->
+                                        AusoApiClient.uriToMultipartPart(context, uri)
+                                    }
+                                    if (fileParts.isEmpty()) {
+                                        // Fallback to text-only if file conversion fails
+                                        val request = CreateTextPostRequest(content = content.trim())
+                                        val response = AusoApiClient.api.createTextPost("Bearer $token", request)
+                                        if (response.isSuccessful) {
+                                            onPostCreated()
+                                            onDismiss()
+                                        } else {
+                                            error = "Error al publicar"
+                                        }
+                                    } else {
+                                        val response = AusoApiClient.api.createPostWithMedia(
+                                            "Bearer $token",
+                                            contentBody,
+                                            fileParts
+                                        )
+                                        if (response.isSuccessful) {
+                                            onPostCreated()
+                                            onDismiss()
+                                        } else {
+                                            // Fallback: try text-only post if media endpoint not available
+                                            val request = CreateTextPostRequest(content = content.trim())
+                                            val textResponse = AusoApiClient.api.createTextPost("Bearer $token", request)
+                                            if (textResponse.isSuccessful) {
+                                                onPostCreated()
+                                                onDismiss()
+                                            } else {
+                                                error = "Error al publicar (el servidor no soporta imagenes aun)"
+                                            }
+                                        }
+                                    }
                                 } else {
-                                    error = "Error al publicar"
+                                    // Text-only post
+                                    val request = CreateTextPostRequest(content = content.trim())
+                                    val response = AusoApiClient.api.createTextPost("Bearer $token", request)
+                                    if (response.isSuccessful) {
+                                        onPostCreated()
+                                        onDismiss()
+                                    } else {
+                                        error = "Error al publicar"
+                                    }
                                 }
                             } else {
                                 error = "No autenticado"
                             }
                         } catch (e: Exception) {
-                            error = "Error de conexión: ${e.message}"
+                            error = "Error de conexion: ${e.message}"
                         }
                         isPosting = false
                     }
@@ -310,6 +403,7 @@ fun PostCard(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxWidth()
             ) {
+                // Author avatar
                 Box(
                     modifier = Modifier
                         .size(40.dp)
@@ -317,12 +411,21 @@ fun PostCard(
                         .background(MaterialTheme.colorScheme.primary),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text(
-                        text = postResponse.authorDisplayName.take(1).uppercase(),
-                        color = MaterialTheme.colorScheme.onPrimary,
-                        fontWeight = FontWeight.Bold,
-                        style = MaterialTheme.typography.titleMedium
-                    )
+                    if (!postResponse.authorProfilePhoto.isNullOrBlank()) {
+                        AsyncImage(
+                            model = "${AusoApiClient.baseUrl}${postResponse.authorProfilePhoto}",
+                            contentDescription = "Avatar",
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop
+                        )
+                    } else {
+                        Text(
+                            text = postResponse.authorDisplayName.take(1).uppercase(),
+                            color = MaterialTheme.colorScheme.onPrimary,
+                            fontWeight = FontWeight.Bold,
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                    }
                 }
 
                 Spacer(modifier = Modifier.width(12.dp))
@@ -363,14 +466,110 @@ fun PostCard(
                 )
             }
 
-            // Images chip
+            // Post images - show actual images instead of just chips
             if (postResponse.images.isNotEmpty()) {
                 Spacer(modifier = Modifier.height(12.dp))
-                AssistChip(
-                    onClick = {},
-                    label = { Text("${postResponse.images.size} imagen(es)") },
-                    modifier = Modifier.padding(2.dp)
-                )
+                val images = postResponse.images
+                when {
+                    images.size == 1 -> {
+                        // Single image - full width
+                        AsyncImage(
+                            model = "${AusoApiClient.baseUrl}${images[0].imageUrl}",
+                            contentDescription = "Imagen del post",
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(max = 300.dp)
+                                .clip(RoundedCornerShape(12.dp)),
+                            contentScale = ContentScale.Crop
+                        )
+                    }
+                    images.size == 2 -> {
+                        // Two images side by side
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            images.forEach { img ->
+                                AsyncImage(
+                                    model = "${AusoApiClient.baseUrl}${img.imageUrl}",
+                                    contentDescription = "Imagen del post",
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .heightIn(max = 200.dp)
+                                        .clip(RoundedCornerShape(8.dp)),
+                                    contentScale = ContentScale.Crop
+                                )
+                            }
+                        }
+                    }
+                    else -> {
+                        // 3+ images - grid-like layout
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            // First row: up to 2 images
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                images.take(2).forEach { img ->
+                                    AsyncImage(
+                                        model = "${AusoApiClient.baseUrl}${img.imageUrl}",
+                                        contentDescription = "Imagen del post",
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .heightIn(max = 160.dp)
+                                            .clip(RoundedCornerShape(8.dp)),
+                                        contentScale = ContentScale.Crop
+                                    )
+                                }
+                            }
+                            // Second row: remaining images
+                            if (images.size > 2) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    images.drop(2).take(2).forEach { img ->
+                                        Box(
+                                            modifier = Modifier.weight(1f)
+                                        ) {
+                                            AsyncImage(
+                                                model = "${AusoApiClient.baseUrl}${img.imageUrl}",
+                                                contentDescription = "Imagen del post",
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .heightIn(max = 160.dp)
+                                                    .clip(RoundedCornerShape(8.dp)),
+                                                contentScale = ContentScale.Crop
+                                            )
+                                            // Show "+N more" overlay on last visible image
+                                            val remaining = images.size - 4
+                                            if (img == images.last() && remaining > 0) {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .fillMaxWidth()
+                                                        .height(160.dp)
+                                                        .clip(RoundedCornerShape(8.dp))
+                                                        .background(androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.5f)),
+                                                    contentAlignment = Alignment.Center
+                                                ) {
+                                                    Text(
+                                                        "+$remaining mas",
+                                                        color = androidx.compose.ui.graphics.Color.White,
+                                                        fontWeight = FontWeight.Bold,
+                                                        style = MaterialTheme.typography.titleMedium
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
 
             // Video chip
@@ -378,7 +577,7 @@ fun PostCard(
                 Spacer(modifier = Modifier.height(12.dp))
                 AssistChip(
                     onClick = {},
-                    label = { Text("🎬 Video") },
+                    label = { Text("Video") },
                     modifier = Modifier.padding(2.dp)
                 )
             }
@@ -388,7 +587,7 @@ fun PostCard(
                 Spacer(modifier = Modifier.height(12.dp))
                 Column {
                     Text(
-                        text = "📊 ${postResponse.poll.poll.question}",
+                        text = postResponse.poll.poll.question,
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.onSurface

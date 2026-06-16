@@ -305,3 +305,9 @@ data class ApiError(
     val status: Int,
     val message: String
 )
+
+// ========== UPLOAD ==========
+data class UploadResponse(
+    val url: String,
+    @SerializedName("thumbnail_url") val thumbnailUrl: String? = null
+)

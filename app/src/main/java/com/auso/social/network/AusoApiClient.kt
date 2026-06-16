@@ -1,10 +1,17 @@
 package com.auso.social.network
 
 import com.auso.social.network.model.*
+import android.content.Context
+import android.net.Uri
+import android.provider.OpenableColumns
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
+import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
+import okhttp3.RequestBody.Companion.asRequestBody
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
+import java.io.File
 import java.util.concurrent.TimeUnit
 
 /**
@@ -66,4 +73,39 @@ object AusoApiClient {
     }
 
     fun getToken(): String? = authToken
+
+    /**
+     * Convert a content URI to a MultipartBody.Part for file uploads
+     */
+    fun uriToMultipartPart(context: Context, uri: Uri, paramName: String = "file"): MultipartBody.Part? {
+        return try {
+            val contentResolver = context.contentResolver
+            val inputStream = contentResolver.openInputStream(uri) ?: return null
+            
+            // Get file name
+            val fileName = getFileName(context, uri) ?: "upload_${System.currentTimeMillis()}.jpg"
+            
+            // Copy to temp file
+            val tempFile = File.createTempFile("upload_", ".jpg", context.cacheDir)
+            tempFile.outputStream().use { output -> inputStream.copyTo(output) }
+            inputStream.close()
+            
+            val mimeType = contentResolver.getType(uri) ?: "image/*"
+            val requestBody = tempFile.asRequestBody(mimeType.toMediaTypeOrNull())
+            MultipartBody.Part.createFormData(paramName, fileName, requestBody)
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    private fun getFileName(context: Context, uri: Uri): String? {
+        return try {
+            context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                if (cursor.moveToFirst() && nameIndex >= 0) cursor.getString(nameIndex) else null
+            }
+        } catch (e: Exception) {
+            null
+        }
+    }
 }
