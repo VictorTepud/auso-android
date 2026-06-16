@@ -72,6 +72,7 @@ fun MainScreen(
 
     var selectedBottomTab by remember { mutableIntStateOf(0) }
     var showProfileScreen by remember { mutableStateOf(false) }
+    var showCreatePostDialog by remember { mutableStateOf(false) }
 
     // Profile screen overlay
     if (showProfileScreen) {
@@ -284,7 +285,7 @@ fun MainScreen(
 
             // FAB positioned above bottom bar
             FloatingActionButton(
-                onClick = { /* Handled inside HomeScreen */ },
+                onClick = { showCreatePostDialog = true },
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
                     .padding(
@@ -300,6 +301,16 @@ fun MainScreen(
                 )
             }
         }
+    }
+
+    // Create post dialog
+    if (showCreatePostDialog) {
+        CreatePostDialog(
+            onDismiss = { showCreatePostDialog = false },
+            onPostCreated = {
+                // Trigger refresh in HomeScreen
+            }
+        )
     }
 }
 

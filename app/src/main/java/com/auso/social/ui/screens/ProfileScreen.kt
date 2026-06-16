@@ -188,7 +188,8 @@ fun ProfileScreen(
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(start = 16.dp, top = (-48).dp)
+                            .offset(y = (-48).dp)
+                            .padding(start = 16.dp)
                     ) {
                         Box(
                             modifier = Modifier
