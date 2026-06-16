@@ -1,7 +1,9 @@
 package com.auso.social.viewmodel
 
-import androidx.lifecycle.ViewModel
+import android.app.Application
+import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.auso.social.data.TokenManager
 import com.auso.social.network.model.UserProfile
 import com.auso.social.repository.AuthRepository
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -12,9 +14,10 @@ import kotlinx.coroutines.launch
 /**
  * ViewModel for authentication state management
  */
-class AuthViewModel : ViewModel() {
+class AuthViewModel(application: Application) : AndroidViewModel(application) {
 
     private val repository = AuthRepository()
+    private val tokenManager = TokenManager(application)
 
     private val _uiState = MutableStateFlow<AuthUiState>(AuthUiState.Idle)
     val uiState: StateFlow<AuthUiState> = _uiState.asStateFlow()
@@ -25,6 +28,17 @@ class AuthViewModel : ViewModel() {
     private val _isLoggedIn = MutableStateFlow(false)
     val isLoggedIn: StateFlow<Boolean> = _isLoggedIn.asStateFlow()
 
+    init {
+        // Check if user is already logged in
+        viewModelScope.launch {
+            val token = tokenManager.getTokenSync()
+            if (token != null) {
+                com.auso.social.network.AusoApiClient.setToken(token)
+                _isLoggedIn.value = true
+            }
+        }
+    }
+
     fun register(email: String, password: String, username: String) {
         if (!validateRegister(email, password, username)) return
 
@@ -33,6 +47,9 @@ class AuthViewModel : ViewModel() {
             val result = repository.register(email, password, username)
             _uiState.value = result.fold(
                 onSuccess = {
+                    // Save token to DataStore
+                    tokenManager.saveToken(it.token)
+                    tokenManager.saveUserInfo(it.user.id, it.user.username)
                     _currentUser.value = it.user
                     _isLoggedIn.value = true
                     AuthUiState.Success(it.user)
@@ -50,6 +67,9 @@ class AuthViewModel : ViewModel() {
             val result = repository.login(email, password)
             _uiState.value = result.fold(
                 onSuccess = {
+                    // Save token to DataStore
+                    tokenManager.saveToken(it.token)
+                    tokenManager.saveUserInfo(it.user.id, it.user.username)
                     _currentUser.value = it.user
                     _isLoggedIn.value = true
                     AuthUiState.Success(it.user)
@@ -66,6 +86,15 @@ class AuthViewModel : ViewModel() {
                 _currentUser.value = it.user
                 _isLoggedIn.value = true
             }
+        }
+    }
+
+    fun logout() {
+        viewModelScope.launch {
+            tokenManager.clearAll()
+            _currentUser.value = null
+            _isLoggedIn.value = false
+            _uiState.value = AuthUiState.Idle
         }
     }
 

@@ -5,20 +5,8 @@
 .DS_Store
 /build
 /captures
-.externalNativeBuild/
-.cxx/
-*.apk
-*.aab
-*.ap_
-*.dex
-
-# Rust
-rust/target/
-
-# Kotlin
-*.class
-*.jar
-
-# Gradle
-.gradle/
-build/
+.externalNativeBuild
+.cxx
+local.properties
+/app/build
+/app/src/main/jniLibs/

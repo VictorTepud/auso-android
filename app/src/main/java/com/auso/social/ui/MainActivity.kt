@@ -7,7 +7,6 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.*
 import androidx.compose.animation.core.tween
 import androidx.compose.runtime.*
-import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -37,7 +36,7 @@ fun AUSOApp() {
 
     val isLoggedIn by authViewModel.isLoggedIn.collectAsState()
 
-    // Determine start destination
+    // Determine start destination based on login state
     val startDestination = if (isLoggedIn) Routes.MAIN else Routes.LOGIN
 
     NavHost(
@@ -88,7 +87,7 @@ fun AUSOApp() {
         ) {
             MainScreen(
                 onLogout = {
-                    authViewModel.resetState()
+                    authViewModel.logout()
                     navController.navigate(Routes.LOGIN) {
                         popUpTo(Routes.MAIN) { inclusive = true }
                     }

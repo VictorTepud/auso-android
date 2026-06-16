@@ -15,6 +15,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.unit.dp
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
@@ -27,6 +28,7 @@ import com.auso.social.ui.screens.*
 /**
  * Main screen with bottom navigation bar
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainScreen(
     onLogout: () -> Unit = {}
@@ -66,6 +68,29 @@ fun MainScreen(
 
     Scaffold(
         modifier = Modifier.background(MaterialTheme.colorScheme.background),
+        topBar = {
+            TopAppBar(
+                title = {
+                    Text(
+                        text = "AUSO",
+                        style = MaterialTheme.typography.titleLarge,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    titleContentColor = MaterialTheme.colorScheme.primary
+                ),
+                actions = {
+                    TextButton(onClick = onLogout) {
+                        Text(
+                            "Salir",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            )
+        },
         bottomBar = {
             if (showBottomBar) {
                 NavigationBar(
@@ -133,8 +158,6 @@ fun MainScreen(
         }
     }
 }
-
-private val Int.dp get() = androidx.compose.ui.unit.dp(this.toFloat())
 
 data class BottomNavItem(
     val route: String,

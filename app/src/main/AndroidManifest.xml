@@ -9,10 +9,10 @@
         android:name=".AusoApp"
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
-        android:label="AUSO"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.AUSO"
-        android:usesCleartextTraffic="true"
         tools:targetApi="34">
 
         <activity
@@ -25,4 +25,5 @@
             </intent-filter>
         </activity>
     </application>
+
 </manifest>
