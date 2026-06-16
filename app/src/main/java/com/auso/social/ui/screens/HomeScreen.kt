@@ -119,11 +119,10 @@ fun HomeScreen(
             LazyColumn(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(MaterialTheme.colorScheme.background)
-                    .padding(horizontal = 12.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
+                    .background(MaterialTheme.colorScheme.background),
+                verticalArrangement = Arrangement.spacedBy(0.dp),
                 contentPadding = PaddingValues(
-                    top = 12.dp,
+                    top = 8.dp,
                     bottom = 88.dp // Space for FAB above bottom bar
                 )
             ) {
@@ -374,187 +373,187 @@ fun PostCard(
 ) {
     val post = postResponse.post
 
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = if (post.backgroundColor != null) {
-                try {
-                    android.graphics.Color.parseColor(post.backgroundColor)
-                    androidx.compose.ui.graphics.Color(android.graphics.Color.parseColor(post.backgroundColor))
-                } catch (e: Exception) {
-                    MaterialTheme.colorScheme.surface
-                }
-            } else {
-                MaterialTheme.colorScheme.surface
-            }
-        ),
-        shape = RoundedCornerShape(16.dp)
+    val cardColor = if (post.backgroundColor != null) {
+        try {
+            androidx.compose.ui.graphics.Color(android.graphics.Color.parseColor(post.backgroundColor))
+        } catch (e: Exception) {
+            MaterialTheme.colorScheme.surface
+        }
+    } else {
+        MaterialTheme.colorScheme.surface
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(cardColor)
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            // Author row
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxWidth()
+        // Horizontal divider at top of each post
+        HorizontalDivider(
+            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+            thickness = 0.5.dp
+        )
+
+        // Author row with horizontal padding
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 12.dp)
+        ) {
+            // Author avatar
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.primary),
+                contentAlignment = Alignment.Center
             ) {
-                // Author avatar
-                Box(
-                    modifier = Modifier
-                        .size(40.dp)
-                        .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.primary),
-                    contentAlignment = Alignment.Center
-                ) {
-                    if (!postResponse.authorProfilePhoto.isNullOrBlank()) {
-                        AsyncImage(
-                            model = AusoApiClient.fullUrl(postResponse.authorProfilePhoto),
-                            contentDescription = "Avatar",
-                            modifier = Modifier.fillMaxSize(),
-                            contentScale = ContentScale.Crop
-                        )
-                    } else {
-                        Text(
-                            text = postResponse.authorDisplayName.take(1).uppercase(),
-                            color = MaterialTheme.colorScheme.onPrimary,
-                            fontWeight = FontWeight.Bold,
-                            style = MaterialTheme.typography.titleMedium
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.width(12.dp))
-
-                Column {
-                    Text(
-                        text = postResponse.authorDisplayName,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = if (post.backgroundColor != null)
-                            androidx.compose.ui.graphics.Color.White
-                        else
-                            MaterialTheme.colorScheme.onSurface
+                if (!postResponse.authorProfilePhoto.isNullOrBlank()) {
+                    AsyncImage(
+                        model = AusoApiClient.fullUrl(postResponse.authorProfilePhoto),
+                        contentDescription = "Avatar",
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop
                     )
+                } else {
                     Text(
-                        text = "@${postResponse.authorUsername}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = if (post.backgroundColor != null)
-                            androidx.compose.ui.graphics.Color.White.copy(alpha = 0.7f)
-                        else
-                            MaterialTheme.colorScheme.onSurfaceVariant
+                        text = postResponse.authorDisplayName.take(1).uppercase(),
+                        color = MaterialTheme.colorScheme.onPrimary,
+                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.titleMedium
                     )
                 }
             }
 
-            // Post content
-            if (post.content.isNotBlank()) {
-                Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.width(12.dp))
+
+            Column {
                 Text(
-                    text = post.content,
-                    style = MaterialTheme.typography.bodyLarge,
+                    text = postResponse.authorDisplayName,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
                     color = if (post.backgroundColor != null)
                         androidx.compose.ui.graphics.Color.White
                     else
-                        MaterialTheme.colorScheme.onSurface,
-                    maxLines = 10,
-                    overflow = TextOverflow.Ellipsis
+                        MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    text = "@${postResponse.authorUsername}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (post.backgroundColor != null)
+                        androidx.compose.ui.graphics.Color.White.copy(alpha = 0.7f)
+                    else
+                        MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
+        }
 
-            // Post images - show actual images instead of just chips
-            if (postResponse.images.isNotEmpty()) {
-                Spacer(modifier = Modifier.height(12.dp))
-                val images = postResponse.images
-                when {
-                    images.size == 1 -> {
-                        // Single image - full width
-                        AsyncImage(
-                            model = AusoApiClient.fullUrl(images[0].imageUrl),
-                            contentDescription = "Imagen del post",
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .heightIn(max = 300.dp)
-                                .clip(RoundedCornerShape(12.dp)),
-                            contentScale = ContentScale.Crop
-                        )
+        // Post content with horizontal padding for text
+        if (post.content.isNotBlank()) {
+            Text(
+                text = post.content,
+                style = MaterialTheme.typography.bodyLarge,
+                color = if (post.backgroundColor != null)
+                    androidx.compose.ui.graphics.Color.White
+                else
+                    MaterialTheme.colorScheme.onSurface,
+                maxLines = 10,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(horizontal = 16.dp)
+            )
+        }
+
+        // Post images - FULL WIDTH, no padding, no rounded corners
+        if (postResponse.images.isNotEmpty()) {
+            Spacer(modifier = Modifier.height(8.dp))
+            val images = postResponse.images
+            when {
+                images.size == 1 -> {
+                    // Single image - full width, no rounding
+                    AsyncImage(
+                        model = AusoApiClient.fullUrl(images[0].imageUrl),
+                        contentDescription = "Imagen del post",
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 350.dp),
+                        contentScale = ContentScale.Crop
+                    )
+                }
+                images.size == 2 -> {
+                    // Two images side by side, full width
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
+                        images.forEach { img ->
+                            AsyncImage(
+                                model = AusoApiClient.fullUrl(img.imageUrl),
+                                contentDescription = "Imagen del post",
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .heightIn(max = 220.dp),
+                                contentScale = ContentScale.Crop
+                            )
+                        }
                     }
-                    images.size == 2 -> {
-                        // Two images side by side
+                }
+                else -> {
+                    // 3+ images - grid-like layout
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
+                        // First row: up to 2 images
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            horizontalArrangement = Arrangement.spacedBy(2.dp)
                         ) {
-                            images.forEach { img ->
+                            images.take(2).forEach { img ->
                                 AsyncImage(
                                     model = AusoApiClient.fullUrl(img.imageUrl),
                                     contentDescription = "Imagen del post",
                                     modifier = Modifier
                                         .weight(1f)
-                                        .heightIn(max = 200.dp)
-                                        .clip(RoundedCornerShape(8.dp)),
+                                        .heightIn(max = 180.dp),
                                     contentScale = ContentScale.Crop
                                 )
                             }
                         }
-                    }
-                    else -> {
-                        // 3+ images - grid-like layout
-                        Column(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                            // First row: up to 2 images
+                        // Second row: remaining images
+                        if (images.size > 2) {
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                horizontalArrangement = Arrangement.spacedBy(2.dp)
                             ) {
-                                images.take(2).forEach { img ->
-                                    AsyncImage(
-                                        model = AusoApiClient.fullUrl(img.imageUrl),
-                                        contentDescription = "Imagen del post",
-                                        modifier = Modifier
-                                            .weight(1f)
-                                            .heightIn(max = 160.dp)
-                                            .clip(RoundedCornerShape(8.dp)),
-                                        contentScale = ContentScale.Crop
-                                    )
-                                }
-                            }
-                            // Second row: remaining images
-                            if (images.size > 2) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                                ) {
-                                    images.drop(2).take(2).forEach { img ->
-                                        Box(
-                                            modifier = Modifier.weight(1f)
-                                        ) {
-                                            AsyncImage(
-                                                model = AusoApiClient.fullUrl(img.imageUrl),
-                                                contentDescription = "Imagen del post",
+                                images.drop(2).take(2).forEach { img ->
+                                    Box(
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        AsyncImage(
+                                            model = AusoApiClient.fullUrl(img.imageUrl),
+                                            contentDescription = "Imagen del post",
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .heightIn(max = 180.dp),
+                                            contentScale = ContentScale.Crop
+                                        )
+                                        // Show "+N more" overlay on last visible image
+                                        val remaining = images.size - 4
+                                        if (img == images.last() && remaining > 0) {
+                                            Box(
                                                 modifier = Modifier
                                                     .fillMaxWidth()
-                                                    .heightIn(max = 160.dp)
-                                                    .clip(RoundedCornerShape(8.dp)),
-                                                contentScale = ContentScale.Crop
-                                            )
-                                            // Show "+N more" overlay on last visible image
-                                            val remaining = images.size - 4
-                                            if (img == images.last() && remaining > 0) {
-                                                Box(
-                                                    modifier = Modifier
-                                                        .fillMaxWidth()
-                                                        .height(160.dp)
-                                                        .clip(RoundedCornerShape(8.dp))
-                                                        .background(androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.5f)),
-                                                    contentAlignment = Alignment.Center
-                                                ) {
-                                                    Text(
-                                                        "+$remaining mas",
-                                                        color = androidx.compose.ui.graphics.Color.White,
-                                                        fontWeight = FontWeight.Bold,
-                                                        style = MaterialTheme.typography.titleMedium
-                                                    )
-                                                }
+                                                    .height(180.dp)
+                                                    .background(androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.5f)),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Text(
+                                                    "+$remaining mas",
+                                                    color = androidx.compose.ui.graphics.Color.White,
+                                                    fontWeight = FontWeight.Bold,
+                                                    style = MaterialTheme.typography.titleMedium
+                                                )
                                             }
                                         }
                                     }
@@ -564,103 +563,107 @@ fun PostCard(
                     }
                 }
             }
+        }
 
-            // Video chip
-            if (post.postType == "video") {
-                Spacer(modifier = Modifier.height(12.dp))
+        // Video chip
+        if (post.postType == "video") {
+            Row(
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+            ) {
                 AssistChip(
                     onClick = {},
-                    label = { Text("Video") },
-                    modifier = Modifier.padding(2.dp)
+                    label = { Text("Video") }
+                )
+            }
+        }
+
+        // Poll
+        if (post.postType == "poll" && postResponse.poll != null) {
+            Column(
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+            ) {
+                Text(
+                    text = postResponse.poll.poll.question,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                postResponse.poll.options.forEach { opt ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        LinearProgressIndicator(
+                            progress = {
+                                if (postResponse.poll.totalVotes > 0)
+                                    opt.votesCount.toFloat() / postResponse.poll.totalVotes.toFloat()
+                                else 0f
+                            },
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(6.dp)
+                                .clip(RoundedCornerShape(3.dp)),
+                            color = MaterialTheme.colorScheme.primary,
+                            trackColor = MaterialTheme.colorScheme.surfaceVariant
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "${opt.option.optionText} (${opt.votesCount})",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.weight(1.5f)
+                        )
+                    }
+                }
+            }
+        }
+
+        // Actions row with horizontal padding
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 8.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(24.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.clip(RoundedCornerShape(8.dp))
+            ) {
+                IconButton(onClick = onLikeClick, modifier = Modifier.size(36.dp)) {
+                    Icon(
+                        imageVector = if (postResponse.isLiked) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                        contentDescription = "Like",
+                        tint = if (postResponse.isLiked) MaterialTheme.colorScheme.error
+                        else MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+                Text(
+                    text = postResponse.likesCount.toString(),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
 
-            // Poll
-            if (post.postType == "poll" && postResponse.poll != null) {
-                Spacer(modifier = Modifier.height(12.dp))
-                Column {
-                    Text(
-                        text = postResponse.poll.poll.question,
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    postResponse.poll.options.forEach { opt ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 2.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            LinearProgressIndicator(
-                                progress = {
-                                    if (postResponse.poll.totalVotes > 0)
-                                        opt.votesCount.toFloat() / postResponse.poll.totalVotes.toFloat()
-                                    else 0f
-                                },
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .height(6.dp)
-                                    .clip(RoundedCornerShape(3.dp)),
-                                color = MaterialTheme.colorScheme.primary,
-                                trackColor = MaterialTheme.colorScheme.surfaceVariant
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = "${opt.option.optionText} (${opt.votesCount})",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.weight(1.5f)
-                            )
-                        }
-                    }
-                }
-            }
-
-            // Actions
-            Spacer(modifier = Modifier.height(12.dp))
             Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(24.dp)
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.clip(RoundedCornerShape(8.dp))
             ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.clip(RoundedCornerShape(8.dp))
-                ) {
-                    IconButton(onClick = onLikeClick, modifier = Modifier.size(36.dp)) {
-                        Icon(
-                            imageVector = if (postResponse.isLiked) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
-                            contentDescription = "Like",
-                            tint = if (postResponse.isLiked) MaterialTheme.colorScheme.error
-                            else MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-                    Text(
-                        text = postResponse.likesCount.toString(),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                IconButton(onClick = onCommentClick, modifier = Modifier.size(36.dp)) {
+                    Icon(
+                        imageVector = Icons.Default.ChatBubbleOutline,
+                        contentDescription = "Comentar",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(20.dp)
                     )
                 }
-
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.clip(RoundedCornerShape(8.dp))
-                ) {
-                    IconButton(onClick = onCommentClick, modifier = Modifier.size(36.dp)) {
-                        Icon(
-                            imageVector = Icons.Default.ChatBubbleOutline,
-                            contentDescription = "Comentar",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-                    Text(
-                        text = postResponse.commentsCount.toString(),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
+                Text(
+                    text = postResponse.commentsCount.toString(),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
     }

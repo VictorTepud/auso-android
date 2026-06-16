@@ -29,10 +29,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
+import com.auso.social.network.AusoApiClient
 import com.auso.social.ui.navigation.Routes
 import com.auso.social.ui.screens.*
 import com.auso.social.viewmodel.AuthViewModel
@@ -179,14 +182,24 @@ fun MainScreen(
                                     .clickable { showProfileScreen = true },
                                 contentAlignment = Alignment.Center
                             ) {
-                                val displayName = currentUser?.displayName ?: ""
-                                val initial = displayName.take(1).ifBlank { "U" }
-                                Text(
-                                    text = initial.uppercase(),
-                                    color = MaterialTheme.colorScheme.onPrimary,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 14.sp
-                                )
+                                val photoUrl = currentUser?.profilePhotoUrl
+                                if (!photoUrl.isNullOrBlank()) {
+                                    AsyncImage(
+                                        model = AusoApiClient.fullUrl(photoUrl),
+                                        contentDescription = "Foto de perfil",
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentScale = ContentScale.Crop
+                                    )
+                                } else {
+                                    val displayName = currentUser?.displayName ?: ""
+                                    val initial = displayName.take(1).ifBlank { "U" }
+                                    Text(
+                                        text = initial.uppercase(),
+                                        color = MaterialTheme.colorScheme.onPrimary,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 14.sp
+                                    )
+                                }
                             }
                             Spacer(modifier = Modifier.width(8.dp))
                         }
@@ -243,9 +256,9 @@ fun MainScreen(
             }
         },
         bottomBar = {
-            // Transparent bottom navigation - no background, no indicator highlight
+            // Bottom navigation with solid background
             NavigationBar(
-                containerColor = Color.Transparent,
+                containerColor = MaterialTheme.colorScheme.surface,
                 tonalElevation = 0.dp,
                 modifier = Modifier.height(56.dp)
             ) {

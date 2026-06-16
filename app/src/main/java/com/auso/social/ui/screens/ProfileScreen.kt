@@ -32,6 +32,7 @@ import com.auso.social.network.AusoApiClient
 import com.auso.social.network.model.PostResponse
 import com.auso.social.network.model.UpdateProfileRequest
 import com.auso.social.network.model.UserProfile
+import com.auso.social.network.model.UserStats
 import com.auso.social.viewmodel.AuthViewModel
 import kotlinx.coroutines.launch
 
@@ -47,6 +48,7 @@ fun ProfileScreen(
     val context = LocalContext.current
 
     var profile by remember { mutableStateOf<UserProfile?>(currentUser) }
+    var stats by remember { mutableStateOf<UserStats?>(null) }
     var posts by remember { mutableStateOf<List<PostResponse>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
     var showEditDialog by remember { mutableStateOf(false) }
@@ -65,6 +67,7 @@ fun ProfileScreen(
                 if (response.isSuccessful) {
                     val body = response.body()
                     profile = body?.user
+                    stats = body?.stats
                     authViewModel.loadProfile()
                 }
                 // Try to get user's posts (using feed for now)
@@ -98,7 +101,9 @@ fun ProfileScreen(
                                 // Reload profile to get updated photo URL
                                 val profileResponse = AusoApiClient.api.getMyProfile("Bearer $token")
                                 if (profileResponse.isSuccessful) {
-                                    profile = profileResponse.body()?.user
+                                    val body = profileResponse.body()
+                                    profile = body?.user
+                                    stats = body?.stats
                                     authViewModel.loadProfile()
                                 }
                                 localProfilePhotoUri = null
@@ -132,7 +137,9 @@ fun ProfileScreen(
                                 // Reload profile to get updated photo URL
                                 val profileResponse = AusoApiClient.api.getMyProfile("Bearer $token")
                                 if (profileResponse.isSuccessful) {
-                                    profile = profileResponse.body()?.user
+                                    val body = profileResponse.body()
+                                    profile = body?.user
+                                    stats = body?.stats
                                     authViewModel.loadProfile()
                                 }
                                 localCoverPhotoUri = null
@@ -387,9 +394,9 @@ fun ProfileScreen(
                             .padding(horizontal = 16.dp, vertical = 8.dp),
                         horizontalArrangement = Arrangement.spacedBy(24.dp)
                     ) {
-                        StatItem("Publicaciones", posts.size)
-                        StatItem("Seguidores", 0) // TODO: from API
-                        StatItem("Siguiendo", 0) // TODO: from API
+                        StatItem("Publicaciones", (stats?.postsCount ?: posts.size.toLong()).toInt())
+                        StatItem("Seguidores", (stats?.followersCount ?: 0L).toInt())
+                        StatItem("Siguiendo", (stats?.followingCount ?: 0L).toInt())
                     }
                     HorizontalDivider(
                         modifier = Modifier.padding(vertical = 8.dp),
@@ -479,7 +486,9 @@ fun ProfileScreen(
                                 // Reload profile
                                 val profileResponse = AusoApiClient.api.getMyProfile("Bearer $token")
                                 if (profileResponse.isSuccessful) {
-                                    profile = profileResponse.body()?.user
+                                    val body = profileResponse.body()
+                                    profile = body?.user
+                                    stats = body?.stats
                                     authViewModel.loadProfile()
                                 }
                             }
