@@ -28,6 +28,10 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
     private val _isLoggedIn = MutableStateFlow(false)
     val isLoggedIn: StateFlow<Boolean> = _isLoggedIn.asStateFlow()
 
+    // Loading state for initial token check - prevents login screen flash
+    private val _isCheckingAuth = MutableStateFlow(true)
+    val isCheckingAuth: StateFlow<Boolean> = _isCheckingAuth.asStateFlow()
+
     init {
         // Check if user is already logged in
         viewModelScope.launch {
@@ -35,7 +39,10 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
             if (token != null) {
                 com.auso.social.network.AusoApiClient.setToken(token)
                 _isLoggedIn.value = true
+                // Load profile data
+                loadProfile()
             }
+            _isCheckingAuth.value = false
         }
     }
 

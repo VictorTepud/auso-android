@@ -6,7 +6,14 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.*
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.*
+import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -35,6 +42,13 @@ fun AUSOApp() {
     val authViewModel: AuthViewModel = viewModel()
 
     val isLoggedIn by authViewModel.isLoggedIn.collectAsState()
+    val isCheckingAuth by authViewModel.isCheckingAuth.collectAsState()
+
+    // Show splash while checking auth state
+    if (isCheckingAuth) {
+        SplashScreen()
+        return
+    }
 
     val startDestination = if (isLoggedIn) Routes.MAIN else Routes.LOGIN
 
@@ -115,12 +129,47 @@ fun AUSOApp() {
             enterTransition = { fadeIn(animationSpec = tween(500)) }
         ) {
             MainScreen(
+                authViewModel = authViewModel,
                 onLogout = {
                     authViewModel.logout()
                     navController.navigate(Routes.LOGIN) {
                         popUpTo(Routes.MAIN) { inclusive = true }
                     }
                 }
+            )
+        }
+    }
+}
+
+@Composable
+fun SplashScreen() {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                text = "AUSO",
+                style = MaterialTheme.typography.displayLarge,
+                color = MaterialTheme.colorScheme.primary,
+                fontWeight = FontWeight.Bold
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = "AURA SOCIAL",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                letterSpacing = 4.sp
+            )
+            Spacer(modifier = Modifier.height(32.dp))
+            CircularProgressIndicator(
+                modifier = Modifier.size(32.dp),
+                color = MaterialTheme.colorScheme.primary,
+                strokeWidth = 3.dp
             )
         }
     }

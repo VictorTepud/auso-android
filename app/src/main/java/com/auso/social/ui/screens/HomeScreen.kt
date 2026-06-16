@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -19,20 +20,65 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.auso.social.network.AusoApiClient
+import com.auso.social.network.model.CreateTextPostRequest
+import com.auso.social.network.model.FeedResponse
 import com.auso.social.network.model.PostResponse
+import com.auso.social.viewmodel.AuthViewModel
+import kotlinx.coroutines.launch
 
 /**
- * Home screen - shows the post feed
+ * Home screen - shows the post feed with ability to create posts
  */
 @Composable
 fun HomeScreen(
-    posts: List<PostResponse> = emptyList(),
-    onLikeClick: (String) -> Unit = {},
-    onCommentClick: (String) -> Unit = {},
-    onCreatePost: () -> Unit = {}
+    tabName: String = "Amigos",
+    authViewModel: AuthViewModel? = null
 ) {
+    var posts by remember { mutableStateOf<List<PostResponse>>(emptyList()) }
+    var isLoading by remember { mutableStateOf(false) }
+    var showCreateDialog by remember { mutableStateOf(false) }
+    val coroutineScope = rememberCoroutineScope()
+
+    // Load feed
+    LaunchedEffect(tabName) {
+        isLoading = true
+        try {
+            val token = AusoApiClient.getToken()
+            if (token != null) {
+                val response = AusoApiClient.api.getFeed("Bearer $token")
+                if (response.isSuccessful) {
+                    val feed = response.body()
+                    posts = feed?.posts ?: emptyList()
+                }
+            }
+        } catch (e: Exception) {
+            // Silently fail - show empty state
+        }
+        isLoading = false
+    }
+
     Box(modifier = Modifier.fillMaxSize()) {
-        if (posts.isEmpty()) {
+        if (isLoading) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(MaterialTheme.colorScheme.background),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(32.dp),
+                    color = MaterialTheme.colorScheme.primary
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "Cargando...",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            }
+        } else if (posts.isEmpty()) {
             // Empty state
             Column(
                 modifier = Modifier
@@ -54,7 +100,12 @@ fun HomeScreen(
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "Sigue a usuarios para ver sus publicaciones aquí",
+                    text = when (tabName) {
+                        "Amigos" -> "Sigue a usuarios para ver sus publicaciones aquí"
+                        "Recomendado" -> "Las publicaciones recomendadas aparecerán aquí"
+                        "Explorar" -> "Explora publicaciones de toda la comunidad"
+                        else -> "Sigue a usuarios para ver sus publicaciones aquí"
+                    },
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -68,11 +119,30 @@ fun HomeScreen(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
                 contentPadding = PaddingValues(vertical = 12.dp)
             ) {
-                items(posts) { postResponse ->
+                items(posts, key = { it.post.id }) { postResponse ->
                     PostCard(
                         postResponse = postResponse,
-                        onLikeClick = { onLikeClick(postResponse.post.id) },
-                        onCommentClick = { onCommentClick(postResponse.post.id) }
+                        onLikeClick = {
+                            coroutineScope.launch {
+                                try {
+                                    val token = AusoApiClient.getToken()
+                                    if (token != null) {
+                                        val response = AusoApiClient.api.toggleLike(
+                                            "Bearer $token",
+                                            postResponse.post.id
+                                        )
+                                        if (response.isSuccessful) {
+                                            // Refresh feed
+                                            val feedResponse = AusoApiClient.api.getFeed("Bearer $token")
+                                            if (feedResponse.isSuccessful) {
+                                                posts = feedResponse.body()?.posts ?: emptyList()
+                                            }
+                                        }
+                                    }
+                                } catch (_: Exception) {}
+                            }
+                        },
+                        onCommentClick = { /* TODO: Comments */ }
                     )
                 }
             }
@@ -80,7 +150,7 @@ fun HomeScreen(
 
         // FAB for creating posts
         FloatingActionButton(
-            onClick = onCreatePost,
+            onClick = { showCreateDialog = true },
             modifier = Modifier
                 .align(Alignment.BottomEnd)
                 .padding(16.dp),
@@ -90,6 +160,131 @@ fun HomeScreen(
             Icon(Icons.Outlined.Create, contentDescription = "Crear post")
         }
     }
+
+    // Create post dialog
+    if (showCreateDialog) {
+        CreatePostDialog(
+            onDismiss = { showCreateDialog = false },
+            onPostCreated = {
+                // Refresh feed
+                coroutineScope.launch {
+                    try {
+                        val token = AusoApiClient.getToken()
+                        if (token != null) {
+                            val response = AusoApiClient.api.getFeed("Bearer $token")
+                            if (response.isSuccessful) {
+                                posts = response.body()?.posts ?: emptyList()
+                            }
+                        }
+                    } catch (_: Exception) {}
+                }
+            }
+        )
+    }
+}
+
+@Composable
+fun CreatePostDialog(
+    onDismiss: () -> Unit,
+    onPostCreated: () -> Unit
+) {
+    var content by remember { mutableStateOf("") }
+    var isPosting by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf("") }
+    val coroutineScope = rememberCoroutineScope()
+
+    AlertDialog(
+        onDismissRequest = { if (!isPosting) onDismiss() },
+        title = {
+            Text(
+                text = "Crear publicación",
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+        },
+        text = {
+            Column {
+                OutlinedTextField(
+                    value = content,
+                    onValueChange = {
+                        content = it
+                        error = ""
+                    },
+                    placeholder = { Text("¿Qué estás pensando?") },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(120.dp),
+                    maxLines = 6,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = MaterialTheme.colorScheme.primary,
+                        unfocusedBorderColor = MaterialTheme.colorScheme.outline,
+                        cursorColor = MaterialTheme.colorScheme.primary
+                    ),
+                    shape = RoundedCornerShape(12.dp)
+                )
+                if (error.isNotBlank()) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = error,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    if (content.isBlank()) {
+                        error = "Escribe algo para publicar"
+                        return@TextButton
+                    }
+                    isPosting = true
+                    coroutineScope.launch {
+                        try {
+                            val token = AusoApiClient.getToken()
+                            if (token != null) {
+                                val request = CreateTextPostRequest(content = content.trim())
+                                val response = AusoApiClient.api.createTextPost("Bearer $token", request)
+                                if (response.isSuccessful) {
+                                    onPostCreated()
+                                    onDismiss()
+                                } else {
+                                    error = "Error al publicar"
+                                }
+                            } else {
+                                error = "No autenticado"
+                            }
+                        } catch (e: Exception) {
+                            error = "Error de conexión: ${e.message}"
+                        }
+                        isPosting = false
+                    }
+                },
+                enabled = !isPosting
+            ) {
+                if (isPosting) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(18.dp),
+                        color = MaterialTheme.colorScheme.primary,
+                        strokeWidth = 2.dp
+                    )
+                } else {
+                    Text("Publicar", color = MaterialTheme.colorScheme.primary)
+                }
+            }
+        },
+        dismissButton = {
+            TextButton(
+                onClick = onDismiss,
+                enabled = !isPosting
+            ) {
+                Text("Cancelar")
+            }
+        },
+        containerColor = MaterialTheme.colorScheme.surface,
+        shape = RoundedCornerShape(16.dp)
+    )
 }
 
 @Composable
@@ -122,7 +317,7 @@ fun PostCard(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                // Avatar placeholder
+                // Avatar - use profile photo if available
                 Box(
                     modifier = Modifier
                         .size(40.dp)
@@ -179,7 +374,6 @@ fun PostCard(
             // Images
             if (postResponse.images.isNotEmpty()) {
                 Spacer(modifier = Modifier.height(12.dp))
-                // For now show image count
                 AssistChip(
                     onClick = {},
                     label = { Text("${postResponse.images.size} imagen(es)") },
@@ -215,9 +409,11 @@ fun PostCard(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             LinearProgressIndicator(
-                                progress = if (postResponse.poll.totalVotes > 0)
-                                    opt.votesCount.toFloat() / postResponse.poll.totalVotes.toFloat()
-                                else 0f,
+                                progress = {
+                                    if (postResponse.poll.totalVotes > 0)
+                                        opt.votesCount.toFloat() / postResponse.poll.totalVotes.toFloat()
+                                    else 0f
+                                },
                                 modifier = Modifier
                                     .weight(1f)
                                     .height(6.dp)
