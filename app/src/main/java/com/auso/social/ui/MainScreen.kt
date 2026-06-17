@@ -79,6 +79,8 @@ fun MainScreen(
 
     var selectedBottomTab by remember { mutableIntStateOf(0) }
     var showProfileScreen by remember { mutableStateOf(false) }
+    var showUserProfileScreen by remember { mutableStateOf(false) }
+    var viewingUsername by remember { mutableStateOf("") }
     var showCreatePostDialog by remember { mutableStateOf(false) }
     var refreshTrigger by remember { mutableIntStateOf(0) }
 
@@ -96,6 +98,19 @@ fun MainScreen(
             authViewModel = authViewModel,
             onBack = { showProfileScreen = false },
             onLogout = onLogout
+        )
+        return
+    }
+
+    // Other user's profile screen overlay
+    if (showUserProfileScreen) {
+        UserProfileScreen(
+            username = viewingUsername,
+            onBack = { showUserProfileScreen = false },
+            onAuthorClick = { username ->
+                viewingUsername = username
+                showUserProfileScreen = true
+            }
         )
         return
     }
@@ -301,7 +316,11 @@ fun MainScreen(
                         HomeScreen(
                             tabName = feedTabs[page],
                             authViewModel = authViewModel,
-                            refreshTrigger = refreshTrigger
+                            refreshTrigger = refreshTrigger,
+                            onAuthorClick = { username ->
+                                viewingUsername = username
+                                showUserProfileScreen = true
+                            }
                         )
                     }
                 }

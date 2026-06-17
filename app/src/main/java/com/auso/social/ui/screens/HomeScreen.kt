@@ -1,7 +1,9 @@
 package com.auso.social.ui.screens
 
+import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -14,6 +16,12 @@ import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.ChatBubbleOutline
 import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.BookmarkBorder
+import androidx.compose.material.icons.filled.Bookmark
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.outlined.Block
+import androidx.compose.material.icons.outlined.Flag
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -40,7 +48,8 @@ import kotlinx.coroutines.launch
 fun HomeScreen(
     tabName: String = "Amigos",
     authViewModel: AuthViewModel? = null,
-    refreshTrigger: Int = 0
+    refreshTrigger: Int = 0,
+    onAuthorClick: (String) -> Unit = {}
 ) {
     var posts by remember { mutableStateOf<List<PostResponse>>(emptyList()) }
     var isLoading by remember { mutableStateOf(false) }
@@ -152,7 +161,8 @@ fun HomeScreen(
                                 } catch (_: Exception) {}
                             }
                         },
-                        onCommentClick = { /* TODO: Comments */ }
+                        onCommentClick = { /* TODO: Comments */ },
+                        onAuthorClick = onAuthorClick
                     )
                 }
             }
@@ -369,9 +379,13 @@ fun CreatePostDialog(
 fun PostCard(
     postResponse: PostResponse,
     onLikeClick: () -> Unit,
-    onCommentClick: () -> Unit
+    onCommentClick: () -> Unit,
+    onAuthorClick: (String) -> Unit = {}
 ) {
     val post = postResponse.post
+    val context = LocalContext.current
+    var isSaved by remember { mutableStateOf(false) }
+    var showMoreMenu by remember { mutableStateOf(false) }
 
     val cardColor = if (post.backgroundColor != null) {
         try {
@@ -401,12 +415,13 @@ fun PostCard(
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp, vertical = 12.dp)
         ) {
-            // Author avatar
+            // Author avatar - clickable
             Box(
                 modifier = Modifier
                     .size(40.dp)
                     .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.primary),
+                    .background(MaterialTheme.colorScheme.primary)
+                    .clickable { onAuthorClick(postResponse.authorUsername) },
                 contentAlignment = Alignment.Center
             ) {
                 if (!postResponse.authorProfilePhoto.isNullOrBlank()) {
@@ -428,7 +443,12 @@ fun PostCard(
 
             Spacer(modifier = Modifier.width(12.dp))
 
-            Column {
+            // Author name and username - clickable
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .clickable { onAuthorClick(postResponse.authorUsername) }
+            ) {
                 Text(
                     text = postResponse.authorDisplayName,
                     style = MaterialTheme.typography.titleMedium,
@@ -446,6 +466,57 @@ fun PostCard(
                     else
                         MaterialTheme.colorScheme.onSurfaceVariant
                 )
+            }
+
+            // 3-dot menu
+            Box {
+                IconButton(
+                    onClick = { showMoreMenu = true },
+                    modifier = Modifier.size(32.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.MoreVert,
+                        contentDescription = "Mas opciones",
+                        tint = if (post.backgroundColor != null)
+                            androidx.compose.ui.graphics.Color.White.copy(alpha = 0.7f)
+                        else
+                            MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+                DropdownMenu(
+                    expanded = showMoreMenu,
+                    onDismissRequest = { showMoreMenu = false }
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("No me interesa") },
+                        onClick = {
+                            showMoreMenu = false
+                            // TODO: Implement "not interested" logic
+                        },
+                        leadingIcon = {
+                            Icon(
+                                Icons.Outlined.Block,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Reportar") },
+                        onClick = {
+                            showMoreMenu = false
+                            // TODO: Implement report logic
+                        },
+                        leadingIcon = {
+                            Icon(
+                                Icons.Outlined.Flag,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    )
+                }
             }
         }
 
@@ -625,8 +696,9 @@ fun PostCard(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 8.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(24.dp)
+            verticalArrangement = Arrangement.SpaceBetween
         ) {
+            // Like button
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.clip(RoundedCornerShape(8.dp))
@@ -647,6 +719,7 @@ fun PostCard(
                 )
             }
 
+            // Comment button
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.clip(RoundedCornerShape(8.dp))
@@ -664,6 +737,50 @@ fun PostCard(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+            }
+
+            // Share button
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.clip(RoundedCornerShape(8.dp))
+            ) {
+                IconButton(
+                    onClick = {
+                        val shareIntent = Intent().apply {
+                            action = Intent.ACTION_SEND
+                            putExtra(Intent.EXTRA_TEXT, "Publicado por @${postResponse.authorUsername} en AUSO\n\n${post.content}")
+                            type = "text/plain"
+                        }
+                        context.startActivity(Intent.createChooser(shareIntent, "Compartir via"))
+                    },
+                    modifier = Modifier.size(36.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Share,
+                        contentDescription = "Compartir",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
+
+            // Save/Bookmark button
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.clip(RoundedCornerShape(8.dp))
+            ) {
+                IconButton(
+                    onClick = { isSaved = !isSaved },
+                    modifier = Modifier.size(36.dp)
+                ) {
+                    Icon(
+                        imageVector = if (isSaved) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
+                        contentDescription = "Guardar",
+                        tint = if (isSaved) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
             }
         }
     }
