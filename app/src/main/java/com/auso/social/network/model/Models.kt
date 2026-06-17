@@ -323,3 +323,9 @@ data class ImagePostResponse(
     val post: Post,
     val images: List<PostImage> = emptyList()
 )
+
+data class VideoPostResponse(
+    val post: Post,
+    val message: String = "",
+    @SerializedName("video_id") val videoId: String = ""
+)

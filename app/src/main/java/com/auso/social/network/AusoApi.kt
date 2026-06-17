@@ -179,6 +179,13 @@ interface AusoApi {
         @Part files: List<MultipartBody.Part>
     ): Response<List<PostImage>>
 
+    @Multipart
+    @POST("api/v1/posts/video")
+    suspend fun createVideoPost(
+        @Header("Authorization") token: String,
+        @Part file: MultipartBody.Part
+    ): Response<VideoPostResponse>
+
     // ========== CHANNELS ==========
     @POST("api/v1/communities/{communityId}/channels")
     suspend fun createChannel(

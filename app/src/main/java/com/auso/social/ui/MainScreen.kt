@@ -92,6 +92,14 @@ fun MainScreen(
         uri?.let { postImageUris = postImageUris + it }
     }
 
+    // Video picker for post creation
+    var postVideoUri by remember { mutableStateOf<Uri?>(null) }
+    val postVideoPicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri ->
+        uri?.let { postVideoUri = it }
+    }
+
     // Profile screen overlay
     if (showProfileScreen) {
         ProfileScreen(
@@ -357,13 +365,17 @@ fun MainScreen(
             onDismiss = {
                 showCreatePostDialog = false
                 postImageUris = emptyList()
+                postVideoUri = null
             },
             onPostCreated = {
                 refreshTrigger++
             },
             selectedImages = postImageUris,
             onAddImage = { postImagePicker.launch("image/*") },
-            onRemoveImage = { uri -> postImageUris = postImageUris - uri }
+            onRemoveImage = { uri -> postImageUris = postImageUris - uri },
+            selectedVideo = postVideoUri,
+            onAddVideo = { postVideoPicker.launch("video/*") },
+            onRemoveVideo = { postVideoUri = null }
         )
     }
 }

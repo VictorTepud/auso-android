@@ -16,6 +16,7 @@ import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.ChatBubbleOutline
 import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.Bookmark
@@ -39,6 +40,7 @@ import com.auso.social.network.AusoApiClient
 import com.auso.social.network.model.CreateImagePackPostRequest
 import com.auso.social.network.model.CreateTextPostRequest
 import com.auso.social.network.model.PostResponse
+import com.auso.social.network.model.VideoPostResponse
 import com.auso.social.viewmodel.AuthViewModel
 import kotlinx.coroutines.launch
 
@@ -178,10 +180,14 @@ fun CreatePostDialog(
     onPostCreated: () -> Unit,
     selectedImages: List<Uri> = emptyList(),
     onAddImage: () -> Unit = {},
-    onRemoveImage: (Uri) -> Unit = {}
+    onRemoveImage: (Uri) -> Unit = {},
+    selectedVideo: Uri? = null,
+    onAddVideo: () -> Unit = {},
+    onRemoveVideo: () -> Unit = {}
 ) {
     var content by remember { mutableStateOf("") }
     var isPosting by remember { mutableStateOf(false) }
+    var uploadProgress by remember { mutableStateOf("") }
     var error by remember { mutableStateOf("") }
     val coroutineScope = rememberCoroutineScope()
     val context = LocalContext.current
@@ -215,6 +221,51 @@ fun CreatePostDialog(
                     ),
                     shape = RoundedCornerShape(12.dp)
                 )
+
+                // Selected video preview
+                if (selectedVideo != null) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(MaterialTheme.colorScheme.surfaceVariant)
+                            .padding(12.dp)
+                    ) {
+                        Icon(
+                            Icons.Filled.Movie,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(32.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Video seleccionado",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = "Se procesara como HLS despues de subir",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        IconButton(
+                            onClick = onRemoveVideo,
+                            modifier = Modifier.size(24.dp)
+                        ) {
+                            Icon(
+                                Icons.Filled.Close,
+                                contentDescription = "Quitar video",
+                                modifier = Modifier.size(16.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
 
                 // Selected images thumbnails
                 if (selectedImages.isNotEmpty()) {
@@ -255,25 +306,68 @@ fun CreatePostDialog(
                     }
                 }
 
-                // Add image button
+                // Add image / video buttons
                 Spacer(modifier = Modifier.height(8.dp))
-                OutlinedButton(
-                    onClick = onAddImage,
-                    enabled = !isPosting,
-                    shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.outlinedButtonColors(
-                        contentColor = MaterialTheme.colorScheme.primary
-                    )
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Icon(
-                        Icons.Filled.Image,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        if (selectedImages.isEmpty()) "Agregar imagen" else "Agregar otra imagen"
-                    )
+                    // Add image button
+                    OutlinedButton(
+                        onClick = onAddImage,
+                        enabled = !isPosting && selectedVideo == null,
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = MaterialTheme.colorScheme.primary
+                        )
+                    ) {
+                        Icon(
+                            Icons.Filled.Image,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            if (selectedImages.isEmpty()) "Imagen" else "Otra"
+                        )
+                    }
+
+                    // Add video button
+                    OutlinedButton(
+                        onClick = onAddVideo,
+                        enabled = !isPosting && selectedImages.isEmpty(),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = MaterialTheme.colorScheme.primary
+                        )
+                    ) {
+                        Icon(
+                            Icons.Filled.Movie,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Video")
+                    }
+                }
+
+                // Upload progress
+                if (uploadProgress.isNotBlank()) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            strokeWidth = 2.dp,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = uploadProgress,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
 
                 if (error.isNotBlank()) {
@@ -289,8 +383,8 @@ fun CreatePostDialog(
         confirmButton = {
             TextButton(
                 onClick = {
-                    if (content.isBlank() && selectedImages.isEmpty()) {
-                        error = "Escribe algo o agrega una imagen"
+                    if (content.isBlank() && selectedImages.isEmpty() && selectedVideo == null) {
+                        error = "Escribe algo, agrega una imagen o un video"
                         return@TextButton
                     }
                     isPosting = true
@@ -300,7 +394,26 @@ fun CreatePostDialog(
                             if (token != null) {
                                 val textContent = content.trim()
 
-                                if (selectedImages.isEmpty()) {
+                                if (selectedVideo != null) {
+                                    // Video post
+                                    uploadProgress = "Subiendo video..."
+                                    val videoPart = AusoApiClient.uriToMultipartPart(context, selectedVideo, "file")
+                                    if (videoPart != null) {
+                                        val response = AusoApiClient.api.createVideoPost(
+                                            "Bearer $token",
+                                            videoPart
+                                        )
+                                        if (response.isSuccessful) {
+                                            uploadProgress = "Video recibido, procesando..."
+                                            onPostCreated()
+                                            onDismiss()
+                                        } else {
+                                            error = "Error al subir video: ${response.code()}"
+                                        }
+                                    } else {
+                                        error = "No se pudo leer el archivo de video"
+                                    }
+                                } else if (selectedImages.isEmpty()) {
                                     // Text-only post
                                     val request = CreateTextPostRequest(content = textContent)
                                     val response = AusoApiClient.api.createTextPost("Bearer $token", request)
@@ -312,6 +425,7 @@ fun CreatePostDialog(
                                     }
                                 } else {
                                     // Post with images: create image-pack post, then upload images
+                                    uploadProgress = "Subiendo imagenes..."
                                     val request = CreateImagePackPostRequest(
                                         content = textContent.ifBlank { null },
                                         layoutMode = "carousel"
@@ -349,6 +463,7 @@ fun CreatePostDialog(
                             error = "Error de conexion: ${e.message}"
                         }
                         isPosting = false
+                        uploadProgress = ""
                     }
                 },
                 enabled = !isPosting
