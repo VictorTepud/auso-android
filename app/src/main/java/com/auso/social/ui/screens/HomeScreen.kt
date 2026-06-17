@@ -32,8 +32,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -60,30 +60,72 @@ fun HomeScreen(
     authViewModel: AuthViewModel? = null,
     refreshTrigger: Int = 0,
     onAuthorClick: (String) -> Unit = {},
-    onScrollDelta: (Float) -> Unit = {}
+    onScrollDirection: (Int) -> Unit = {},
+    currentlyPlayingVideoId: String? = null,
+    onVideoPlayChanged: (String?) -> Unit = {},
+    isGlobalMuted: Boolean = false,
+    onMuteChanged: (Boolean) -> Unit = {}
 ) {
     var posts by remember { mutableStateOf<List<PostResponse>>(emptyList()) }
     var isLoading by remember { mutableStateOf(false) }
     val coroutineScope = rememberCoroutineScope()
     val listState = rememberLazyListState()
 
-    // Track scroll direction and notify parent for top bar animation
+    // Track scroll direction with accumulated delta to detect slow scrolls
     LaunchedEffect(listState) {
         var prevIndex = listState.firstVisibleItemIndex
-        var prevScrollOffset = listState.firstVisibleItemScrollOffset
+        var prevOffset = listState.firstVisibleItemScrollOffset
+        var accumulatedDelta = 0f
+
         snapshotFlow {
-            Triple(listState.firstVisibleItemIndex, listState.firstVisibleItemScrollOffset, listState.isScrollInProgress)
-        }.collect { (index, offset, isScrolling) ->
-            if (isScrolling) {
-                val delta = if (index != prevIndex) {
-                    if (index > prevIndex) -50f else 50f
-                } else {
-                    (prevScrollOffset - offset).toFloat()
-                }
-                onScrollDelta(delta)
+            Pair(listState.firstVisibleItemIndex, listState.firstVisibleItemScrollOffset)
+        }.collect { (index, offset) ->
+            val delta = if (index != prevIndex) {
+                // Item changed - large scroll
+                if (index > prevIndex) -300f else 300f
+            } else {
+                (prevOffset - offset).toFloat()
             }
+
+            accumulatedDelta += delta
+
+            // Only trigger direction change when accumulated delta exceeds threshold
+            when {
+                accumulatedDelta < -30 -> {
+                    onScrollDirection(-1) // scrolling down
+                    accumulatedDelta = 0f
+                }
+                accumulatedDelta > 30 -> {
+                    onScrollDirection(1) // scrolling up
+                    accumulatedDelta = 0f
+                }
+            }
+
             prevIndex = index
-            prevScrollOffset = offset
+            prevOffset = offset
+        }
+    }
+
+    // Auto-play: detect which video posts are visible and play the first one
+    LaunchedEffect(listState.firstVisibleItemIndex, listState.firstVisibleItemScrollOffset, posts) {
+        if (posts.isEmpty()) return@LaunchedEffect
+
+        val visibleItems = listState.layoutInfo.visibleItemsInfo
+        val visibleVideoPost = visibleItems.firstNotNullOfOrNull { itemInfo ->
+            val index = itemInfo.index
+            if (index < posts.size) {
+                val post = posts[index]
+                if (post.post.postType == "video" && post.video != null) {
+                    post.post.id
+                } else null
+            } else null
+        }
+
+        // Only change if there's a visible video that's not already playing
+        if (visibleVideoPost != null && visibleVideoPost != currentlyPlayingVideoId) {
+            onVideoPlayChanged(visibleVideoPost)
+        } else if (visibleVideoPost == null && currentlyPlayingVideoId != null) {
+            onVideoPlayChanged(null)
         }
     }
 
@@ -181,7 +223,6 @@ fun HomeScreen(
                                             postResponse.post.id
                                         )
                                         if (response.isSuccessful) {
-                                            // Update locally instead of full refresh
                                             val newLiked = response.body()?.liked ?: !postResponse.isLiked
                                             val newCount = response.body()?.likesCount ?: postResponse.likesCount
                                             posts = posts.map {
@@ -195,7 +236,13 @@ fun HomeScreen(
                             }
                         },
                         onCommentClick = { /* TODO: Comments */ },
-                        onAuthorClick = onAuthorClick
+                        onAuthorClick = onAuthorClick,
+                        isCurrentlyPlaying = currentlyPlayingVideoId == postResponse.post.id,
+                        onVideoPlayRequest = { videoId ->
+                            onVideoPlayChanged(videoId)
+                        },
+                        isGlobalMuted = isGlobalMuted,
+                        onMuteChanged = onMuteChanged
                     )
                 }
             }
@@ -545,7 +592,11 @@ fun PostCard(
     postResponse: PostResponse,
     onLikeClick: () -> Unit,
     onCommentClick: () -> Unit,
-    onAuthorClick: (String) -> Unit = {}
+    onAuthorClick: (String) -> Unit = {},
+    isCurrentlyPlaying: Boolean = false,
+    onVideoPlayRequest: (String?) -> Unit = {},
+    isGlobalMuted: Boolean = false,
+    onMuteChanged: (Boolean) -> Unit = {}
 ) {
     val post = postResponse.post
     val context = LocalContext.current
@@ -664,28 +715,18 @@ fun PostCard(
                         text = { Text("No me interesa") },
                         onClick = {
                             showMoreMenu = false
-                            // TODO: Implement "not interested" logic
                         },
                         leadingIcon = {
-                            Icon(
-                                Icons.Outlined.Block,
-                                contentDescription = null,
-                                modifier = Modifier.size(18.dp)
-                            )
+                            Icon(Icons.Outlined.Block, contentDescription = null, modifier = Modifier.size(18.dp))
                         }
                     )
                     DropdownMenuItem(
                         text = { Text("Reportar") },
                         onClick = {
                             showMoreMenu = false
-                            // TODO: Implement report logic
                         },
                         leadingIcon = {
-                            Icon(
-                                Icons.Outlined.Flag,
-                                contentDescription = null,
-                                modifier = Modifier.size(18.dp)
-                            )
+                            Icon(Icons.Outlined.Flag, contentDescription = null, modifier = Modifier.size(18.dp))
                         }
                     )
                 }
@@ -707,13 +748,12 @@ fun PostCard(
             )
         }
 
-        // Post images - FULL WIDTH, calculated max height based on screen
+        // Post images
         if (postResponse.images.isNotEmpty()) {
             Spacer(modifier = Modifier.height(8.dp))
             val images = postResponse.images
             when {
                 images.size == 1 -> {
-                    // Single image - full width, responsive max height
                     AsyncImage(
                         model = AusoApiClient.fullUrl(images[0].imageUrl),
                         contentDescription = "Imagen del post",
@@ -724,7 +764,6 @@ fun PostCard(
                     )
                 }
                 images.size == 2 -> {
-                    // Two images side by side, full width
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(2.dp)
@@ -742,12 +781,10 @@ fun PostCard(
                     }
                 }
                 else -> {
-                    // 3+ images - grid-like layout
                     Column(
                         modifier = Modifier.fillMaxWidth(),
                         verticalArrangement = Arrangement.spacedBy(2.dp)
                     ) {
-                        // First row: up to 2 images
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(2.dp)
@@ -763,16 +800,13 @@ fun PostCard(
                                 )
                             }
                         }
-                        // Second row: remaining images
                         if (images.size > 2) {
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.spacedBy(2.dp)
                             ) {
                                 images.drop(2).take(2).forEach { img ->
-                                    Box(
-                                        modifier = Modifier.weight(1f)
-                                    ) {
+                                    Box(modifier = Modifier.weight(1f)) {
                                         AsyncImage(
                                             model = AusoApiClient.fullUrl(img.imageUrl),
                                             contentDescription = "Imagen del post",
@@ -781,7 +815,6 @@ fun PostCard(
                                                 .heightIn(max = (maxMediaHeightDp * 0.5).roundToInt().dp),
                                             contentScale = ContentScale.Crop
                                         )
-                                        // Show "+N more" overlay on last visible image
                                         val remaining = images.size - 4
                                         if (img == images.last() && remaining > 0) {
                                             Box(
@@ -808,15 +841,22 @@ fun PostCard(
             }
         }
 
-        // Video player - uses aspect ratio from video data for proper sizing
+        // Video player
         if (post.postType == "video" && postResponse.video != null) {
             VideoPlayer(
+                postId = post.id,
                 videoUrl = AusoApiClient.fullUrl(postResponse.video.hlsMasterPlaylistUrl) ?: "",
                 thumbnailUrl = AusoApiClient.fullUrl(postResponse.video.thumbnailUrl),
                 duration = postResponse.video.duration,
                 videoWidth = postResponse.video.width,
                 videoHeight = postResponse.video.height,
-                maxMediaHeightDp = maxMediaHeightDp
+                maxMediaHeightDp = maxMediaHeightDp,
+                isAutoPlay = isCurrentlyPlaying,
+                onPlayChanged = { playing ->
+                    onVideoPlayRequest(if (playing) post.id else null)
+                },
+                isMuted = isGlobalMuted,
+                onMuteChanged = onMuteChanged
             )
         }
 
@@ -863,7 +903,7 @@ fun PostCard(
             }
         }
 
-        // Actions row with horizontal padding
+        // Actions row
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -960,21 +1000,28 @@ fun PostCard(
 
 /**
  * Video player composable using ExoPlayer (Media3) with HLS support.
- * Shows thumbnail initially, plays on tap.
- * Calculates proper height based on video aspect ratio to prevent overlapping.
+ * - Auto-plays when visible and isAutoPlay=true
+ * - Only one video plays at a time (controlled by parent)
+ * - Global mute state: default audio ON, muting one mutes all
+ * - Full player controls: seekbar, play/pause, mute, time display
  */
 @Composable
 fun VideoPlayer(
+    postId: String,
     videoUrl: String,
     thumbnailUrl: String? = null,
     duration: Double = 0.0,
     videoWidth: Int = 0,
     videoHeight: Int = 0,
-    maxMediaHeightDp: Int = 400
+    maxMediaHeightDp: Int = 400,
+    isAutoPlay: Boolean = false,
+    onPlayChanged: (Boolean) -> Unit = {},
+    isMuted: Boolean = false,
+    onMuteChanged: (Boolean) -> Unit = {}
 ) {
     val context = LocalContext.current
     var isPlaying by remember { mutableStateOf(false) }
-    var isMuted by remember { mutableStateOf(true) }
+    var showControls by remember { mutableStateOf(true) }
 
     // Calculate aspect ratio height based on video dimensions
     val configuration = LocalConfiguration.current
@@ -982,11 +1029,9 @@ fun VideoPlayer(
     val aspectRatio = if (videoWidth > 0 && videoHeight > 0) {
         videoWidth.toFloat() / videoHeight.toFloat()
     } else {
-        16f / 9f // default to 16:9
+        16f / 9f
     }
-    // Calculate video height in dp based on screen width and aspect ratio
     val calculatedHeightDp = (screenWidthPx / aspectRatio).roundToInt()
-    // Clamp to max media height
     val videoHeightDp = minOf(calculatedHeightDp, maxMediaHeightDp)
 
     val exoPlayer = remember {
@@ -995,8 +1040,24 @@ fun VideoPlayer(
             setMediaItem(mediaItem)
             prepare()
             playWhenReady = false
-            volume = 0f
+            volume = if (isMuted) 0f else 1f
         }
+    }
+
+    // Sync auto-play state
+    LaunchedEffect(isAutoPlay) {
+        if (isAutoPlay) {
+            exoPlayer.playWhenReady = true
+            isPlaying = true
+        } else {
+            exoPlayer.playWhenReady = false
+            isPlaying = false
+        }
+    }
+
+    // Sync mute state
+    LaunchedEffect(isMuted) {
+        exoPlayer.volume = if (isMuted) 0f else 1f
     }
 
     DisposableEffect(Unit) {
@@ -1010,24 +1071,37 @@ fun VideoPlayer(
             .fillMaxWidth()
             .height(videoHeightDp.dp)
     ) {
-        // Video surface
+        // Video surface with built-in ExoPlayer controls
         AndroidView(
             factory = { ctx ->
                 androidx.media3.ui.PlayerView(ctx).apply {
                     player = exoPlayer
-                    useController = false
+                    useController = true
                     resizeMode = androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT
+                    // Configure controller appearance
+                    controllerShowTimeoutMs = 3000
+                    controllerHideOnTouch = true
+                    setShowBuffering(androidx.media3.ui.PlayerView.SHOW_BUFFERING_WHEN_PLAYING)
+                    setKeepContentOnPlayerReset(false)
                 }
+            },
+            update = { playerView ->
+                playerView.player = exoPlayer
             },
             modifier = Modifier.fillMaxSize()
         )
 
-        // Thumbnail + play button when not playing
-        if (!isPlaying) {
+        // Thumbnail overlay when not playing
+        if (!isPlaying && !isAutoPlay) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(androidx.compose.ui.graphics.Color.Black),
+                    .background(androidx.compose.ui.graphics.Color.Black)
+                    .clickable {
+                        exoPlayer.play()
+                        isPlaying = true
+                        onPlayChanged(true)
+                    },
                 contentAlignment = Alignment.Center
             ) {
                 if (!thumbnailUrl.isNullOrBlank()) {
@@ -1039,6 +1113,7 @@ fun VideoPlayer(
                     )
                 }
 
+                // Play button overlay
                 Box(
                     modifier = Modifier
                         .size(56.dp)
@@ -1056,52 +1131,17 @@ fun VideoPlayer(
             }
         }
 
-        // Tap to play/pause
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .clickable {
-                    if (exoPlayer.isPlaying) {
-                        exoPlayer.pause()
-                        isPlaying = false
-                    } else {
-                        exoPlayer.play()
-                        isPlaying = true
-                    }
-                }
-        )
-
-        // Duration label
-        if (duration > 0) {
-            val minutes = (duration / 60).toInt()
-            val seconds = (duration % 60).toInt()
-            Text(
-                text = String.format("%d:%02d", minutes, seconds),
-                color = androidx.compose.ui.graphics.Color.White,
-                style = MaterialTheme.typography.labelSmall,
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(8.dp)
-                    .background(
-                        androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.6f),
-                        RoundedCornerShape(4.dp)
-                    )
-                    .padding(horizontal = 6.dp, vertical = 2.dp)
-            )
-        }
-
-        // Mute/unmute button with proper icon
+        // Mute/unmute button overlay (always visible on bottom-start)
         IconButton(
             onClick = {
-                isMuted = !isMuted
-                exoPlayer.volume = if (isMuted) 0f else 1f
+                onMuteChanged(!isMuted)
             },
             modifier = Modifier
                 .align(Alignment.BottomStart)
-                .padding(4.dp)
-                .size(32.dp)
+                .padding(start = 8.dp, bottom = 52.dp)
+                .size(28.dp)
                 .background(
-                    androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.4f),
+                    androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.5f),
                     CircleShape
                 )
         ) {
@@ -1109,7 +1149,7 @@ fun VideoPlayer(
                 imageVector = if (isMuted) Icons.Filled.VolumeOff else Icons.Filled.VolumeUp,
                 contentDescription = if (isMuted) "Activar sonido" else "Silenciar",
                 tint = androidx.compose.ui.graphics.Color.White,
-                modifier = Modifier.size(18.dp)
+                modifier = Modifier.size(16.dp)
             )
         }
     }

@@ -4,6 +4,7 @@ import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -75,6 +76,18 @@ fun MainScreen(
 
     // Top bar visibility state - animated hide/show on scroll
     var isTopBarVisible by remember { mutableStateOf(true) }
+    // Animated top padding so content doesn't jump when bar hides/shows
+    val topBarHeightDp = 64.dp // approximate TopAppBar height
+    val topPadding by animateDpAsState(
+        targetValue = if (isTopBarVisible) topBarHeightDp else 0.dp,
+        label = "topPadding"
+    )
+
+    // Global mute state for all videos - default is unmuted (audio ON)
+    var isGlobalMuted by remember { mutableStateOf(false) }
+
+    // Currently playing video index - only one plays at a time
+    var currentlyPlayingVideoId by remember { mutableStateOf<String?>(null) }
 
     // Bottom nav
     val bottomNavItems = listOf(
@@ -326,7 +339,7 @@ fun MainScreen(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(top = if (isTopBarVisible) innerPadding.calculateTopPadding() else 0.dp)
+                .padding(top = topPadding)
         ) {
             when (selectedBottomTab) {
                 0 -> {
@@ -343,13 +356,20 @@ fun MainScreen(
                                 viewingUsername = username
                                 showUserProfileScreen = true
                             },
-                            onScrollDelta = { delta ->
-                                // Hide top bar when scrolling down, show when scrolling up
-                                if (delta < -20) {
-                                    isTopBarVisible = false
-                                } else if (delta > 20) {
-                                    isTopBarVisible = true
+                            onScrollDirection = { direction ->
+                                // direction: positive = scrolling up, negative = scrolling down
+                                when {
+                                    direction > 0 -> isTopBarVisible = true
+                                    direction < 0 -> isTopBarVisible = false
                                 }
+                            },
+                            currentlyPlayingVideoId = currentlyPlayingVideoId,
+                            onVideoPlayChanged = { videoId ->
+                                currentlyPlayingVideoId = videoId
+                            },
+                            isGlobalMuted = isGlobalMuted,
+                            onMuteChanged = { muted ->
+                                isGlobalMuted = muted
                             }
                         )
                     }
