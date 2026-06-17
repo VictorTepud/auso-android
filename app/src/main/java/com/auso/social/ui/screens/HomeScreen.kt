@@ -24,6 +24,7 @@ import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.VolumeOff
 import androidx.compose.material.icons.filled.VolumeUp
+import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.outlined.Block
 import androidx.compose.material.icons.outlined.Flag
@@ -106,25 +107,35 @@ fun HomeScreen(
         }
     }
 
-    // Auto-play: detect which video posts are visible and play the first one
+    // Auto-play: detect which video post is most visible (closest to viewport center)
     LaunchedEffect(listState.firstVisibleItemIndex, listState.firstVisibleItemScrollOffset, posts) {
         if (posts.isEmpty()) return@LaunchedEffect
 
         val visibleItems = listState.layoutInfo.visibleItemsInfo
-        val visibleVideoPost = visibleItems.firstNotNullOfOrNull { itemInfo ->
+        val viewportCenter = listState.layoutInfo.viewportStartOffset +
+            (listState.layoutInfo.viewportEndOffset - listState.layoutInfo.viewportStartOffset) / 2
+
+        // Find the video post whose center is closest to the viewport center
+        var bestVideoId: String? = null
+        var bestDistance = Int.MAX_VALUE
+
+        for (itemInfo in visibleItems) {
             val index = itemInfo.index
-            if (index < posts.size) {
-                val post = posts[index]
-                if (post.post.postType == "video" && post.video != null) {
-                    post.post.id
-                } else null
-            } else null
+            if (index < 0 || index >= posts.size) continue
+            val post = posts[index]
+            if (post.post.postType != "video" || post.video == null) continue
+
+            val itemCenter = itemInfo.offset + itemInfo.size / 2
+            val distance = kotlin.math.abs(itemCenter - viewportCenter)
+            if (distance < bestDistance) {
+                bestDistance = distance
+                bestVideoId = post.post.id
+            }
         }
 
-        // Only change if there's a visible video that's not already playing
-        if (visibleVideoPost != null && visibleVideoPost != currentlyPlayingVideoId) {
-            onVideoPlayChanged(visibleVideoPost)
-        } else if (visibleVideoPost == null && currentlyPlayingVideoId != null) {
+        if (bestVideoId != null && bestVideoId != currentlyPlayingVideoId) {
+            onVideoPlayChanged(bestVideoId)
+        } else if (bestVideoId == null && currentlyPlayingVideoId != null) {
             onVideoPlayChanged(null)
         }
     }
@@ -607,8 +618,8 @@ fun PostCard(
     val configuration = LocalConfiguration.current
     val screenWidthDp = configuration.screenWidthDp
     val screenHeightDp = configuration.screenHeightDp
-    // Max media height: ~55% of screen to leave room for other post elements and nav
-    val maxMediaHeightDp = (screenHeightDp * 0.55).roundToInt()
+    // Max media height: ~80% of screen for immersive media viewing
+    val maxMediaHeightDp = (screenHeightDp * 0.80).roundToInt()
 
     val cardColor = if (post.backgroundColor != null) {
         try {
@@ -1003,7 +1014,7 @@ fun PostCard(
  * - Auto-plays when visible and isAutoPlay=true
  * - Only one video plays at a time (controlled by parent)
  * - Global mute state: default audio ON, muting one mutes all
- * - Full player controls: seekbar, play/pause, mute, time display
+ * - Custom Compose controls: seekbar, play/pause, mute, time display — all grouped, hide together
  */
 @Composable
 fun VideoPlayer(
@@ -1022,6 +1033,9 @@ fun VideoPlayer(
     val context = LocalContext.current
     var isPlaying by remember { mutableStateOf(false) }
     var showControls by remember { mutableStateOf(true) }
+    var currentPosition by remember { mutableLongStateOf(0L) }
+    var totalDuration by remember { mutableLongStateOf(0L) }
+    var isBuffering by remember { mutableStateOf(false) }
 
     // Calculate aspect ratio height based on video dimensions
     val configuration = LocalConfiguration.current
@@ -1044,11 +1058,58 @@ fun VideoPlayer(
         }
     }
 
+    // Listen to player events to update position, duration, buffering state
+    DisposableEffect(exoPlayer) {
+        val listener = object : androidx.media3.common.Player.Listener {
+            override fun onPlaybackStateChanged(playbackState: Int) {
+                isBuffering = playbackState == androidx.media3.common.Player.STATE_BUFFERING
+                if (playbackState == androidx.media3.common.Player.STATE_READY) {
+                    totalDuration = exoPlayer.duration.coerceAtLeast(0L)
+                }
+                if (playbackState == androidx.media3.common.Player.STATE_ENDED) {
+                    isPlaying = false
+                    onPlayChanged(false)
+                }
+            }
+
+            override fun onIsPlayingChanged(playing: Boolean) {
+                isPlaying = playing
+                if (playing) {
+                    totalDuration = exoPlayer.duration.coerceAtLeast(0L)
+                }
+            }
+        }
+        exoPlayer.addListener(listener)
+        onDispose {
+            exoPlayer.removeListener(listener)
+        }
+    }
+
+    // Position update ticker
+    LaunchedEffect(isPlaying) {
+        while (isPlaying) {
+            currentPosition = exoPlayer.currentPosition.coerceAtLeast(0L)
+            if (totalDuration <= 0L) {
+                totalDuration = exoPlayer.duration.coerceAtLeast(0L)
+            }
+            kotlinx.coroutines.delay(200)
+        }
+    }
+
+    // Auto-hide controls after 3 seconds while playing
+    LaunchedEffect(showControls, isPlaying) {
+        if (showControls && isPlaying) {
+            kotlinx.coroutines.delay(3000)
+            showControls = false
+        }
+    }
+
     // Sync auto-play state
     LaunchedEffect(isAutoPlay) {
         if (isAutoPlay) {
             exoPlayer.playWhenReady = true
             isPlaying = true
+            showControls = true
         } else {
             exoPlayer.playWhenReady = false
             isPlaying = false
@@ -1071,16 +1132,13 @@ fun VideoPlayer(
             .fillMaxWidth()
             .height(videoHeightDp.dp)
     ) {
-        // Video surface with built-in ExoPlayer controls
+        // Video surface — NO built-in controller, we use custom Compose overlays
         AndroidView(
             factory = { ctx ->
                 androidx.media3.ui.PlayerView(ctx).apply {
                     player = exoPlayer
-                    useController = true
+                    useController = false
                     resizeMode = androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT
-                    // Configure controller appearance
-                    controllerShowTimeoutMs = 3000
-                    controllerHideOnTouch = true
                     setShowBuffering(androidx.media3.ui.PlayerView.SHOW_BUFFERING_WHEN_PLAYING)
                     setKeepContentOnPlayerReset(false)
                 }
@@ -1091,7 +1149,7 @@ fun VideoPlayer(
             modifier = Modifier.fillMaxSize()
         )
 
-        // Thumbnail overlay when not playing
+        // Thumbnail overlay when not playing and not auto-playing
         if (!isPlaying && !isAutoPlay) {
             Box(
                 modifier = Modifier
@@ -1101,6 +1159,7 @@ fun VideoPlayer(
                         exoPlayer.play()
                         isPlaying = true
                         onPlayChanged(true)
+                        showControls = true
                     },
                 contentAlignment = Alignment.Center
             ) {
@@ -1128,29 +1187,142 @@ fun VideoPlayer(
                         modifier = Modifier.size(32.dp)
                     )
                 }
+
+                // Duration label on thumbnail
+                if (duration > 0) {
+                    val minutes = (duration / 60).toInt()
+                    val seconds = (duration % 60).toInt()
+                    Text(
+                        text = String.format("%d:%02d", minutes, seconds),
+                        color = androidx.compose.ui.graphics.Color.White,
+                        style = MaterialTheme.typography.labelSmall,
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .padding(8.dp)
+                            .background(
+                                androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.6f),
+                                RoundedCornerShape(4.dp)
+                            )
+                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                    )
+                }
             }
         }
 
-        // Mute/unmute button overlay (always visible on bottom-start)
-        IconButton(
-            onClick = {
-                onMuteChanged(!isMuted)
-            },
-            modifier = Modifier
-                .align(Alignment.BottomStart)
-                .padding(start = 8.dp, bottom = 52.dp)
-                .size(28.dp)
-                .background(
-                    androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.5f),
-                    CircleShape
-                )
-        ) {
-            Icon(
-                imageVector = if (isMuted) Icons.Filled.VolumeOff else Icons.Filled.VolumeUp,
-                contentDescription = if (isMuted) "Activar sonido" else "Silenciar",
-                tint = androidx.compose.ui.graphics.Color.White,
-                modifier = Modifier.size(16.dp)
+        // Tap area to toggle controls visibility (only when playing or auto-playing)
+        if (isPlaying || isAutoPlay) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clickable {
+                        showControls = !showControls
+                    }
             )
+        }
+
+        // Custom controls overlay — appears/disappears as a group
+        androidx.compose.animation.AnimatedVisibility(
+            visible = showControls && (isPlaying || isAutoPlay),
+            enter = androidx.compose.animation.fadeIn(),
+            exit = androidx.compose.animation.fadeOut(),
+            modifier = Modifier.align(Alignment.BottomCenter)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(
+                        androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.6f)
+                    )
+                    .padding(horizontal = 12.dp, vertical = 8.dp)
+            ) {
+                // Seekbar
+                val progress = if (totalDuration > 0) {
+                    (currentPosition.toFloat() / totalDuration.toFloat()).coerceIn(0f, 1f)
+                } else 0f
+
+                Slider(
+                    value = progress,
+                    onValueChange = { fraction ->
+                        val seekPosition = (fraction * totalDuration).toLong()
+                        exoPlayer.seekTo(seekPosition)
+                        currentPosition = seekPosition
+                    },
+                    colors = SliderDefaults.colors(
+                        thumbColor = MaterialTheme.colorScheme.primary,
+                        activeTrackColor = MaterialTheme.colorScheme.primary,
+                        inactiveTrackColor = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.3f)
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                // Controls row: time | play/pause | spacer | mute
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // Elapsed / total time
+                    val elapsedSec = (currentPosition / 1000).toInt()
+                    val totalSec = (totalDuration / 1000).toInt()
+                    val elapsedText = String.format(
+                        "%d:%02d",
+                        elapsedSec / 60,
+                        elapsedSec % 60
+                    )
+                    val totalText = String.format(
+                        "%d:%02d",
+                        totalSec / 60,
+                        totalSec % 60
+                    )
+                    Text(
+                        text = "$elapsedText / $totalText",
+                        color = androidx.compose.ui.graphics.Color.White,
+                        style = MaterialTheme.typography.labelSmall,
+                        modifier = Modifier.padding(end = 8.dp)
+                    )
+
+                    // Play/Pause button
+                    IconButton(
+                        onClick = {
+                            if (exoPlayer.isPlaying) {
+                                exoPlayer.pause()
+                                isPlaying = false
+                                onPlayChanged(false)
+                            } else {
+                                exoPlayer.play()
+                                isPlaying = true
+                                onPlayChanged(true)
+                            }
+                        },
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (exoPlayer.isPlaying) Icons.Filled.Pause
+                            else Icons.Filled.PlayArrow,
+                            contentDescription = if (exoPlayer.isPlaying) "Pausar" else "Reproducir",
+                            tint = androidx.compose.ui.graphics.Color.White,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.weight(1f))
+
+                    // Mute/Unmute button — integrated in the same controls row
+                    IconButton(
+                        onClick = {
+                            onMuteChanged(!isMuted)
+                        },
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (isMuted) Icons.Filled.VolumeOff
+                            else Icons.Filled.VolumeUp,
+                            contentDescription = if (isMuted) "Activar sonido" else "Silenciar",
+                            tint = androidx.compose.ui.graphics.Color.White,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
+            }
         }
     }
 }
