@@ -65,7 +65,9 @@ fun HomeScreen(
     currentlyPlayingVideoId: String? = null,
     onVideoPlayChanged: (String?) -> Unit = {},
     isGlobalMuted: Boolean = false,
-    onMuteChanged: (Boolean) -> Unit = {}
+    onMuteChanged: (Boolean) -> Unit = {},
+    topBarHeightDp: androidx.compose.ui.unit.Dp = 64.dp,
+    isTopBarVisible: Boolean = true
 ) {
     var posts by remember { mutableStateOf<List<PostResponse>>(emptyList()) }
     var isLoading by remember { mutableStateOf(false) }
@@ -108,35 +110,36 @@ fun HomeScreen(
     }
 
     // Auto-play: detect which video post is most visible (closest to viewport center)
-    LaunchedEffect(listState.firstVisibleItemIndex, listState.firstVisibleItemScrollOffset, posts) {
-        if (posts.isEmpty()) return@LaunchedEffect
+    // Use snapshotFlow so it keeps checking as items get laid out (fixes first-video-not-detected bug)
+    LaunchedEffect(Unit) {
+        snapshotFlow {
+            val visibleItems = listState.layoutInfo.visibleItemsInfo
+            val viewportCenter = listState.layoutInfo.viewportStartOffset +
+                (listState.layoutInfo.viewportEndOffset - listState.layoutInfo.viewportStartOffset) / 2
 
-        val visibleItems = listState.layoutInfo.visibleItemsInfo
-        val viewportCenter = listState.layoutInfo.viewportStartOffset +
-            (listState.layoutInfo.viewportEndOffset - listState.layoutInfo.viewportStartOffset) / 2
+            var bestVideoId: String? = null
+            var bestDistance = Int.MAX_VALUE
 
-        // Find the video post whose center is closest to the viewport center
-        var bestVideoId: String? = null
-        var bestDistance = Int.MAX_VALUE
+            for (itemInfo in visibleItems) {
+                val index = itemInfo.index
+                if (index < 0 || index >= posts.size) continue
+                val post = posts[index]
+                if (post.post.postType != "video" || post.video == null) continue
 
-        for (itemInfo in visibleItems) {
-            val index = itemInfo.index
-            if (index < 0 || index >= posts.size) continue
-            val post = posts[index]
-            if (post.post.postType != "video" || post.video == null) continue
-
-            val itemCenter = itemInfo.offset + itemInfo.size / 2
-            val distance = kotlin.math.abs(itemCenter - viewportCenter)
-            if (distance < bestDistance) {
-                bestDistance = distance
-                bestVideoId = post.post.id
+                val itemCenter = itemInfo.offset + itemInfo.size / 2
+                val distance = kotlin.math.abs(itemCenter - viewportCenter)
+                if (distance < bestDistance) {
+                    bestDistance = distance
+                    bestVideoId = post.post.id
+                }
             }
-        }
-
-        if (bestVideoId != null && bestVideoId != currentlyPlayingVideoId) {
-            onVideoPlayChanged(bestVideoId)
-        } else if (bestVideoId == null && currentlyPlayingVideoId != null) {
-            onVideoPlayChanged(null)
+            bestVideoId
+        }.collect { bestVideoId ->
+            if (bestVideoId != null && bestVideoId != currentlyPlayingVideoId) {
+                onVideoPlayChanged(bestVideoId)
+            } else if (bestVideoId == null && currentlyPlayingVideoId != null) {
+                onVideoPlayChanged(null)
+            }
         }
     }
 
@@ -217,7 +220,7 @@ fun HomeScreen(
                     .background(MaterialTheme.colorScheme.background),
                 verticalArrangement = Arrangement.spacedBy(0.dp),
                 contentPadding = PaddingValues(
-                    top = 8.dp,
+                    top = topBarHeightDp + 8.dp, // Always pad for top bar so first post isn't hidden
                     bottom = 88.dp // Space for FAB above bottom bar
                 )
             ) {
@@ -770,7 +773,7 @@ fun PostCard(
                         contentDescription = "Imagen del post",
                         modifier = Modifier
                             .fillMaxWidth()
-                            .heightIn(max = maxMediaHeightDp.dp),
+                            .heightIn(min = 200.dp, max = maxMediaHeightDp.dp),
                         contentScale = ContentScale.Crop
                     )
                 }
@@ -785,7 +788,7 @@ fun PostCard(
                                 contentDescription = "Imagen del post",
                                 modifier = Modifier
                                     .weight(1f)
-                                    .heightIn(max = (maxMediaHeightDp * 0.6).roundToInt().dp),
+                                    .heightIn(min = 180.dp, max = (maxMediaHeightDp * 0.6).roundToInt().dp),
                                 contentScale = ContentScale.Crop
                             )
                         }
@@ -806,7 +809,7 @@ fun PostCard(
                                     contentDescription = "Imagen del post",
                                     modifier = Modifier
                                         .weight(1f)
-                                        .heightIn(max = (maxMediaHeightDp * 0.5).roundToInt().dp),
+                                        .heightIn(min = 160.dp, max = (maxMediaHeightDp * 0.5).roundToInt().dp),
                                     contentScale = ContentScale.Crop
                                 )
                             }
@@ -823,7 +826,7 @@ fun PostCard(
                                             contentDescription = "Imagen del post",
                                             modifier = Modifier
                                                 .fillMaxWidth()
-                                                .heightIn(max = (maxMediaHeightDp * 0.5).roundToInt().dp),
+                                                .heightIn(min = 160.dp, max = (maxMediaHeightDp * 0.5).roundToInt().dp),
                                             contentScale = ContentScale.Crop
                                         )
                                         val remaining = images.size - 4
