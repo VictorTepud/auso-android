@@ -25,7 +25,6 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.VolumeOff
 import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.outlined.Block
 import androidx.compose.material.icons.outlined.Flag
 import androidx.compose.material3.*
@@ -33,7 +32,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.graphicsLayer
+
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
@@ -44,12 +43,11 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import coil.compose.AsyncImage
 import com.auso.social.network.AusoApiClient
-import com.auso.social.network.model.CreateImagePackPostRequest
 import com.auso.social.network.model.CreateTextPostRequest
 import com.auso.social.network.model.PostResponse
-import com.auso.social.network.model.VideoPostResponse
 import com.auso.social.viewmodel.AuthViewModel
 import kotlinx.coroutines.launch
+import okhttp3.MediaType.Companion.toMediaType
 import kotlin.math.roundToInt
 
 /**
@@ -392,7 +390,7 @@ fun CreatePostDialog(
 
                     when {
                         selectedVideo != null -> {
-                            // Video post
+                            // Video post - upload as multipart
                             isPosting = true
                             error = ""
                             coroutineScope.launch {
@@ -404,27 +402,8 @@ fun CreatePostDialog(
                                         return@launch
                                     }
 
-                                    // Step 1: Init video upload
-                                    uploadProgress = "Inicializando..."
-                                    val initResponse = AusoApiClient.api.initVideoUpload(
-                                        "Bearer $token",
-                                        com.auso.social.network.model.InitVideoUploadRequest(
-                                            content = content.ifBlank { null }
-                                        )
-                                    )
-                                    if (!initResponse.isSuccessful) {
-                                        error = "Error al iniciar subida: ${initResponse.code()}"
-                                        isPosting = false
-                                        return@launch
-                                    }
-                                    val uploadId = initResponse.body()?.uploadId ?: run {
-                                        error = "No se recibio upload_id"
-                                        isPosting = false
-                                        return@launch
-                                    }
-
-                                    // Step 2: Upload video data
                                     uploadProgress = "Subiendo video..."
+
                                     val inputStream = context.contentResolver.openInputStream(selectedVideo)
                                     if (inputStream == null) {
                                         error = "No se pudo abrir el video"
@@ -432,44 +411,29 @@ fun CreatePostDialog(
                                         return@launch
                                     }
 
-                                    val bufferSize = 64 * 1024
-                                    val buffer = ByteArray(bufferSize)
-                                    var totalRead = 0L
-                                    var bytesRead: Int
+                                    val bytes = inputStream.readBytes()
+                                    inputStream.close()
 
-                                    inputStream.use { stream ->
-                                        while (stream.read(buffer).also { bytesRead = it } != -1) {
-                                            val chunk = buffer.copyOf(bytesRead)
-                                            val uploadResponse = AusoApiClient.api.uploadVideoChunk(
-                                                "Bearer $token",
-                                                uploadId,
-                                                okio.Buffer().write(chunk)
-                                            )
-                                            if (!uploadResponse.isSuccessful) {
-                                                error = "Error subiendo video: ${uploadResponse.code()}"
-                                                isPosting = false
-                                                return@launch
-                                            }
-                                            totalRead += bytesRead
-                                            uploadProgress = "Subiendo video... ${totalRead / 1024} KB"
-                                        }
-                                    }
-
-                                    // Step 3: Complete video upload
-                                    uploadProgress = "Procesando video..."
-                                    val completeResponse = AusoApiClient.api.completeVideoUpload(
-                                        "Bearer $token",
-                                        uploadId
+                                    val videoPart = okhttp3.MultipartBody.Part.createFormData(
+                                        "file",
+                                        "video.mp4",
+                                        okhttp3.RequestBody.create(
+                                            "video/*".toMediaType(),
+                                            bytes
+                                        )
                                     )
-                                    if (!completeResponse.isSuccessful) {
-                                        error = "Error al procesar video: ${completeResponse.code()}"
-                                        isPosting = false
-                                        return@launch
-                                    }
 
-                                    uploadProgress = "Publicado!"
-                                    onPostCreated()
-                                    onDismiss()
+                                    val response = AusoApiClient.api.createVideoPost(
+                                        "Bearer $token",
+                                        videoPart
+                                    )
+                                    if (response.isSuccessful) {
+                                        uploadProgress = "Publicado!"
+                                        onPostCreated()
+                                        onDismiss()
+                                    } else {
+                                        error = "Error al publicar video: ${response.code()}"
+                                    }
                                 } catch (e: Exception) {
                                     error = "Error: ${e.message}"
                                 } finally {
@@ -478,7 +442,7 @@ fun CreatePostDialog(
                             }
                         }
                         selectedImages.isNotEmpty() -> {
-                            // Image pack post
+                            // Image post - upload as multipart
                             isPosting = true
                             error = ""
                             coroutineScope.launch {
@@ -496,23 +460,17 @@ fun CreatePostDialog(
                                         val bytes = inputStream.readBytes()
                                         inputStream.close()
                                         okhttp3.MultipartBody.Part.createFormData(
-                                            "images",
+                                            "files",
                                             "image_$index.jpg",
                                             okhttp3.RequestBody.create(
-                                                okhttp3.MediaType.parse("image/*")!!,
+                                                "image/*".toMediaType(),
                                                 bytes
                                             )
                                         )
                                     }
 
-                                    val contentBody = okhttp3.RequestBody.create(
-                                        okhttp3.MediaType.parse("text/plain"),
-                                        content.ifBlank { " " }
-                                    )
-
-                                    val response = AusoApiClient.api.createImagePackPost(
+                                    val response = AusoApiClient.api.createImagePost(
                                         "Bearer $token",
-                                        contentBody,
                                         imageParts
                                     )
                                     if (response.isSuccessful) {
