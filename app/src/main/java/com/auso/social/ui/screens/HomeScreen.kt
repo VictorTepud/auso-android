@@ -773,8 +773,8 @@ fun PostCard(
                         contentDescription = "Imagen del post",
                         modifier = Modifier
                             .fillMaxWidth()
-                            .heightIn(min = 200.dp, max = maxMediaHeightDp.dp),
-                        contentScale = ContentScale.Crop
+                            .heightIn(max = maxMediaHeightDp.dp),
+                        contentScale = ContentScale.Fit
                     )
                 }
                 images.size == 2 -> {
@@ -788,7 +788,7 @@ fun PostCard(
                                 contentDescription = "Imagen del post",
                                 modifier = Modifier
                                     .weight(1f)
-                                    .heightIn(min = 180.dp, max = (maxMediaHeightDp * 0.6).roundToInt().dp),
+                                    .heightIn(max = (maxMediaHeightDp * 0.6).roundToInt().dp),
                                 contentScale = ContentScale.Crop
                             )
                         }
@@ -809,7 +809,7 @@ fun PostCard(
                                     contentDescription = "Imagen del post",
                                     modifier = Modifier
                                         .weight(1f)
-                                        .heightIn(min = 160.dp, max = (maxMediaHeightDp * 0.5).roundToInt().dp),
+                                        .heightIn(max = (maxMediaHeightDp * 0.5).roundToInt().dp),
                                     contentScale = ContentScale.Crop
                                 )
                             }
@@ -826,7 +826,7 @@ fun PostCard(
                                             contentDescription = "Imagen del post",
                                             modifier = Modifier
                                                 .fillMaxWidth()
-                                                .heightIn(min = 160.dp, max = (maxMediaHeightDp * 0.5).roundToInt().dp),
+                                                .heightIn(max = (maxMediaHeightDp * 0.5).roundToInt().dp),
                                             contentScale = ContentScale.Crop
                                         )
                                         val remaining = images.size - 4

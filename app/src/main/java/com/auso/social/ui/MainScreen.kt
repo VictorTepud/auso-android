@@ -31,6 +31,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
@@ -76,8 +78,15 @@ fun MainScreen(
 
     // Top bar visibility state - animated hide/show on scroll
     var isTopBarVisible by remember { mutableStateOf(true) }
-    // Top bar height reference (for content padding in HomeScreen)
-    val topBarHeightDp = 64.dp
+    // Measure actual top bar height (includes status bar + app bar)
+    var measuredTopBarHeightPx by remember { mutableIntStateOf(0) }
+    val density = LocalDensity.current
+    // Use measured height or fallback to ~112dp (64dp app bar + ~48dp status bar)
+    val topBarHeightDp = if (measuredTopBarHeightPx > 0) {
+        with(density) { measuredTopBarHeightPx.toDp() }
+    } else {
+        112.dp
+    }
 
     // Global mute state for all videos - default is unmuted (audio ON)
     var isGlobalMuted by remember { mutableStateOf(false) }
@@ -225,7 +234,11 @@ fun MainScreen(
                 modifier = Modifier.align(Alignment.TopCenter)
             ) {
                 Surface(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .onGloballyPositioned { coordinates ->
+                            measuredTopBarHeightPx = coordinates.size.height
+                        },
                     shadowElevation = 3.dp,
                     tonalElevation = 0.dp,
                     color = MaterialTheme.colorScheme.surface
@@ -234,6 +247,7 @@ fun MainScreen(
                     when (selectedBottomTab) {
                         0 -> {
                             TopAppBar(
+                                windowInsets = WindowInsets.statusBars,
                                 title = {
                                     Box {
                                         Row(
@@ -331,6 +345,7 @@ fun MainScreen(
                         }
                         1 -> {
                             TopAppBar(
+                                windowInsets = WindowInsets.statusBars,
                                 title = {
                                     Text(
                                         text = "Buscar",
@@ -346,6 +361,7 @@ fun MainScreen(
                         }
                         2 -> {
                             TopAppBar(
+                                windowInsets = WindowInsets.statusBars,
                                 title = {
                                     Text(
                                         text = "Videos",
@@ -361,6 +377,7 @@ fun MainScreen(
                         }
                         3 -> {
                             TopAppBar(
+                                windowInsets = WindowInsets.statusBars,
                                 title = {
                                     Text(
                                         text = "Apps",
