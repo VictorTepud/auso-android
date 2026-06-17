@@ -32,6 +32,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
 import coil.compose.AsyncImage
 import com.auso.social.network.AusoApiClient
 import com.auso.social.network.model.CreateImagePackPostRequest
@@ -636,16 +638,13 @@ fun PostCard(
             }
         }
 
-        // Video chip
-        if (post.postType == "video") {
-            Row(
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-            ) {
-                AssistChip(
-                    onClick = {},
-                    label = { Text("Video") }
-                )
-            }
+        // Video player
+        if (post.postType == "video" && postResponse.video != null) {
+            VideoPlayer(
+                videoUrl = AusoApiClient.fullUrl(postResponse.video.hlsMasterPlaylistUrl) ?: "",
+                thumbnailUrl = AusoApiClient.fullUrl(postResponse.video.thumbnailUrl),
+                duration = postResponse.video.duration
+            )
         }
 
         // Poll
@@ -696,7 +695,7 @@ fun PostCard(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 8.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.SpaceBetween
+            horizontalArrangement = Arrangement.SpaceBetween
         ) {
             // Like button
             Row(
@@ -782,6 +781,140 @@ fun PostCard(
                     )
                 }
             }
+        }
+    }
+}
+
+/**
+ * Video player composable using ExoPlayer (Media3) with HLS support.
+ * Shows thumbnail initially, plays on tap.
+ */
+@Composable
+fun VideoPlayer(
+    videoUrl: String,
+    thumbnailUrl: String? = null,
+    duration: Double = 0.0
+) {
+    val context = LocalContext.current
+    var isPlaying by remember { mutableStateOf(false) }
+    var isMuted by remember { mutableStateOf(true) }
+
+    val exoPlayer = remember {
+        androidx.media3.exoplayer.ExoPlayer.Builder(context).build().apply {
+            val mediaItem = androidx.media3.common.MediaItem.fromUri(videoUrl)
+            setMediaItem(mediaItem)
+            prepare()
+            playWhenReady = false
+            volume = 0f
+        }
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            exoPlayer.release()
+        }
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(max = 350.dp)
+    ) {
+        // Video surface
+        AndroidView(
+            factory = { ctx ->
+                androidx.media3.ui.PlayerView(ctx).apply {
+                    player = exoPlayer
+                    useController = false
+                    resizeMode = androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIXED_WIDTH
+                }
+            },
+            modifier = Modifier.fillMaxSize()
+        )
+
+        // Thumbnail + play button when not playing
+        if (!isPlaying) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.3f)),
+                contentAlignment = Alignment.Center
+            ) {
+                if (!thumbnailUrl.isNullOrBlank()) {
+                    AsyncImage(
+                        model = thumbnailUrl,
+                        contentDescription = "Thumbnail",
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop
+                    )
+                }
+
+                Box(
+                    modifier = Modifier
+                        .size(64.dp)
+                        .clip(CircleShape)
+                        .background(androidx.compose.ui.graphics.Color.White.copy(alpha = 0.9f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "\u25B6",
+                        fontSize = 28.sp,
+                        color = androidx.compose.ui.graphics.Color.Black
+                    )
+                }
+            }
+        }
+
+        // Tap to play/pause
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .clickable {
+                    if (exoPlayer.isPlaying) {
+                        exoPlayer.pause()
+                        isPlaying = false
+                    } else {
+                        exoPlayer.play()
+                        isPlaying = true
+                    }
+                }
+        )
+
+        // Duration label
+        if (duration > 0) {
+            val minutes = (duration / 60).toInt()
+            val seconds = (duration % 60).toInt()
+            Text(
+                text = String.format("%d:%02d", minutes, seconds),
+                color = androidx.compose.ui.graphics.Color.White,
+                style = MaterialTheme.typography.labelSmall,
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(8.dp)
+                    .background(
+                        androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.6f),
+                        RoundedCornerShape(4.dp)
+                    )
+                    .padding(horizontal = 6.dp, vertical = 2.dp)
+            )
+        }
+
+        // Mute/unmute button
+        IconButton(
+            onClick = {
+                isMuted = !isMuted
+                exoPlayer.volume = if (isMuted) 0f else 1f
+            },
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .padding(4.dp)
+                .size(32.dp)
+        ) {
+            Text(
+                text = if (isMuted) "Mute" else "Sound",
+                fontSize = 11.sp,
+                color = androidx.compose.ui.graphics.Color.White
+            )
         }
     }
 }

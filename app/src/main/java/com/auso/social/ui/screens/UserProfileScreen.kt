@@ -243,7 +243,7 @@ fun UserProfileScreen(
                             colors = if (isFollowing) {
                                 ButtonDefaults.outlinedButtonColors()
                             } else {
-                                ButtonDefaults.filledButtonColors()
+                                ButtonDefaults.buttonColors()
                             },
                             modifier = Modifier.height(36.dp)
                         ) {
