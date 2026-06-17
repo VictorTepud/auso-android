@@ -3,6 +3,9 @@ package com.auso.social.ui
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -43,6 +46,7 @@ import kotlinx.coroutines.launch
 
 /**
  * Main screen with bottom navigation bar and top bar
+ * Top bar hides/shows on scroll with animation
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -68,6 +72,9 @@ fun MainScreen(
 
     // Dropdown menu state
     var showFeedMenu by remember { mutableStateOf(false) }
+
+    // Top bar visibility state - animated hide/show on scroll
+    var isTopBarVisible by remember { mutableStateOf(true) }
 
     // Bottom nav
     val bottomNavItems = listOf(
@@ -126,155 +133,162 @@ fun MainScreen(
     Scaffold(
         modifier = Modifier.background(MaterialTheme.colorScheme.background),
         topBar = {
-            // Different top bars per tab
-            when (selectedBottomTab) {
-                0 -> {
-                    // Home top bar: dropdown menu + search + notifications + profile
-                    TopAppBar(
-                        title = {
-                            // Dropdown to select feed filter
-                            Box {
-                                Row(
-                                    modifier = Modifier
-                                        .clickable { showFeedMenu = true }
-                                        .padding(vertical = 4.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text(
-                                        text = feedTabs[selectedFeedTab],
-                                        color = MaterialTheme.colorScheme.onSurface,
-                                        fontWeight = FontWeight.SemiBold,
-                                        fontSize = 18.sp
-                                    )
+            // Animated top bar - hides on scroll down, shows on scroll up
+            AnimatedVisibility(
+                visible = isTopBarVisible,
+                enter = slideInVertically(initialOffsetY = { -it }),
+                exit = slideOutVertically(targetOffsetY = { -it })
+            ) {
+                // Different top bars per tab
+                when (selectedBottomTab) {
+                    0 -> {
+                        // Home top bar: dropdown menu + search + notifications + profile
+                        TopAppBar(
+                            title = {
+                                // Dropdown to select feed filter
+                                Box {
+                                    Row(
+                                        modifier = Modifier
+                                            .clickable { showFeedMenu = true }
+                                            .padding(vertical = 4.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = feedTabs[selectedFeedTab],
+                                            color = MaterialTheme.colorScheme.onSurface,
+                                            fontWeight = FontWeight.SemiBold,
+                                            fontSize = 18.sp
+                                        )
+                                        Icon(
+                                            Icons.Filled.ArrowDropDown,
+                                            contentDescription = "Cambiar filtro",
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
+                                    DropdownMenu(
+                                        expanded = showFeedMenu,
+                                        onDismissRequest = { showFeedMenu = false }
+                                    ) {
+                                        feedTabs.forEachIndexed { index, tab ->
+                                            DropdownMenuItem(
+                                                text = {
+                                                    Text(
+                                                        tab,
+                                                        fontWeight = if (index == selectedFeedTab) FontWeight.Bold else FontWeight.Normal,
+                                                        color = if (index == selectedFeedTab) MaterialTheme.colorScheme.primary
+                                                        else MaterialTheme.colorScheme.onSurface
+                                                    )
+                                                },
+                                                onClick = {
+                                                    selectedFeedTab = index
+                                                    showFeedMenu = false
+                                                }
+                                            )
+                                        }
+                                    }
+                                }
+                            },
+                            colors = TopAppBarDefaults.topAppBarColors(
+                                containerColor = MaterialTheme.colorScheme.surface,
+                            ),
+                            actions = {
+                                IconButton(onClick = { /* TODO: Open search */ }) {
                                     Icon(
-                                        Icons.Filled.ArrowDropDown,
-                                        contentDescription = "Cambiar filtro",
+                                        Icons.Filled.Search,
+                                        contentDescription = "Buscar",
                                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.size(20.dp)
+                                        modifier = Modifier.size(22.dp)
                                     )
                                 }
-                                DropdownMenu(
-                                    expanded = showFeedMenu,
-                                    onDismissRequest = { showFeedMenu = false }
+                                IconButton(onClick = { /* TODO: Open notifications */ }) {
+                                    Icon(
+                                        Icons.Filled.Notifications,
+                                        contentDescription = "Notificaciones",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(22.dp)
+                                    )
+                                }
+                                // Profile photo - opens profile
+                                Box(
+                                    modifier = Modifier
+                                        .size(32.dp)
+                                        .clip(CircleShape)
+                                        .background(MaterialTheme.colorScheme.primary)
+                                        .clickable { showProfileScreen = true },
+                                    contentAlignment = Alignment.Center
                                 ) {
-                                    feedTabs.forEachIndexed { index, tab ->
-                                        DropdownMenuItem(
-                                            text = {
-                                                Text(
-                                                    tab,
-                                                    fontWeight = if (index == selectedFeedTab) FontWeight.Bold else FontWeight.Normal,
-                                                    color = if (index == selectedFeedTab) MaterialTheme.colorScheme.primary
-                                                    else MaterialTheme.colorScheme.onSurface
-                                                )
-                                            },
-                                            onClick = {
-                                                selectedFeedTab = index
-                                                showFeedMenu = false
-                                            }
+                                    val photoUrl = currentUser?.profilePhotoUrl
+                                    if (!photoUrl.isNullOrBlank()) {
+                                        AsyncImage(
+                                            model = AusoApiClient.fullUrl(photoUrl),
+                                            contentDescription = "Foto de perfil",
+                                            modifier = Modifier.fillMaxSize(),
+                                            contentScale = ContentScale.Crop
+                                        )
+                                    } else {
+                                        val displayName = currentUser?.displayName ?: ""
+                                        val initial = displayName.take(1).ifBlank { "U" }
+                                        Text(
+                                            text = initial.uppercase(),
+                                            color = MaterialTheme.colorScheme.onPrimary,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 14.sp
                                         )
                                     }
                                 }
+                                Spacer(modifier = Modifier.width(8.dp))
                             }
-                        },
-                        colors = TopAppBarDefaults.topAppBarColors(
-                            containerColor = MaterialTheme.colorScheme.surface,
-                        ),
-                        actions = {
-                            IconButton(onClick = { /* TODO: Open search */ }) {
-                                Icon(
-                                    Icons.Filled.Search,
-                                    contentDescription = "Buscar",
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.size(22.dp)
+                        )
+                    }
+                    1 -> {
+                        // Search top bar
+                        TopAppBar(
+                            title = {
+                                Text(
+                                    text = "Buscar",
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontSize = 18.sp
                                 )
-                            }
-                            IconButton(onClick = { /* TODO: Open notifications */ }) {
-                                Icon(
-                                    Icons.Filled.Notifications,
-                                    contentDescription = "Notificaciones",
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.size(22.dp)
+                            },
+                            colors = TopAppBarDefaults.topAppBarColors(
+                                containerColor = MaterialTheme.colorScheme.surface,
+                            )
+                        )
+                    }
+                    2 -> {
+                        // Videos top bar
+                        TopAppBar(
+                            title = {
+                                Text(
+                                    text = "Videos",
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontSize = 18.sp
                                 )
-                            }
-                            // Profile photo - opens profile
-                            Box(
-                                modifier = Modifier
-                                    .size(32.dp)
-                                    .clip(CircleShape)
-                                    .background(MaterialTheme.colorScheme.primary)
-                                    .clickable { showProfileScreen = true },
-                                contentAlignment = Alignment.Center
-                            ) {
-                                val photoUrl = currentUser?.profilePhotoUrl
-                                if (!photoUrl.isNullOrBlank()) {
-                                    AsyncImage(
-                                        model = AusoApiClient.fullUrl(photoUrl),
-                                        contentDescription = "Foto de perfil",
-                                        modifier = Modifier.fillMaxSize(),
-                                        contentScale = ContentScale.Crop
-                                    )
-                                } else {
-                                    val displayName = currentUser?.displayName ?: ""
-                                    val initial = displayName.take(1).ifBlank { "U" }
-                                    Text(
-                                        text = initial.uppercase(),
-                                        color = MaterialTheme.colorScheme.onPrimary,
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 14.sp
-                                    )
-                                }
-                            }
-                            Spacer(modifier = Modifier.width(8.dp))
-                        }
-                    )
-                }
-                1 -> {
-                    // Search top bar
-                    TopAppBar(
-                        title = {
-                            Text(
-                                text = "Buscar",
-                                color = MaterialTheme.colorScheme.onSurface,
-                                fontWeight = FontWeight.SemiBold,
-                                fontSize = 18.sp
+                            },
+                            colors = TopAppBarDefaults.topAppBarColors(
+                                containerColor = MaterialTheme.colorScheme.surface,
                             )
-                        },
-                        colors = TopAppBarDefaults.topAppBarColors(
-                            containerColor = MaterialTheme.colorScheme.surface,
                         )
-                    )
-                }
-                2 -> {
-                    // Videos top bar
-                    TopAppBar(
-                        title = {
-                            Text(
-                                text = "Videos",
-                                color = MaterialTheme.colorScheme.onSurface,
-                                fontWeight = FontWeight.SemiBold,
-                                fontSize = 18.sp
+                    }
+                    3 -> {
+                        // Apps top bar
+                        TopAppBar(
+                            title = {
+                                Text(
+                                    text = "Apps",
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontSize = 18.sp
+                                )
+                            },
+                            colors = TopAppBarDefaults.topAppBarColors(
+                                containerColor = MaterialTheme.colorScheme.surface,
                             )
-                        },
-                        colors = TopAppBarDefaults.topAppBarColors(
-                            containerColor = MaterialTheme.colorScheme.surface,
                         )
-                    )
-                }
-                3 -> {
-                    // Apps top bar
-                    TopAppBar(
-                        title = {
-                            Text(
-                                text = "Apps",
-                                color = MaterialTheme.colorScheme.onSurface,
-                                fontWeight = FontWeight.SemiBold,
-                                fontSize = 18.sp
-                            )
-                        },
-                        colors = TopAppBarDefaults.topAppBarColors(
-                            containerColor = MaterialTheme.colorScheme.surface,
-                        )
-                    )
+                    }
                 }
             }
         },
@@ -312,7 +326,7 @@ fun MainScreen(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(top = innerPadding.calculateTopPadding())
+                .padding(top = if (isTopBarVisible) innerPadding.calculateTopPadding() else 0.dp)
         ) {
             when (selectedBottomTab) {
                 0 -> {
@@ -328,6 +342,14 @@ fun MainScreen(
                             onAuthorClick = { username ->
                                 viewingUsername = username
                                 showUserProfileScreen = true
+                            },
+                            onScrollDelta = { delta ->
+                                // Hide top bar when scrolling down, show when scrolling up
+                                if (delta < -20) {
+                                    isTopBarVisible = false
+                                } else if (delta > 20) {
+                                    isTopBarVisible = true
+                                }
                             }
                         )
                     }

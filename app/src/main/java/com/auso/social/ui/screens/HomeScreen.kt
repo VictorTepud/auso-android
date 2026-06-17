@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -21,6 +22,10 @@ import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.VolumeOff
+import androidx.compose.material.icons.filled.VolumeUp
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.outlined.Block
 import androidx.compose.material.icons.outlined.Flag
 import androidx.compose.material3.*
@@ -28,7 +33,9 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -43,6 +50,7 @@ import com.auso.social.network.model.PostResponse
 import com.auso.social.network.model.VideoPostResponse
 import com.auso.social.viewmodel.AuthViewModel
 import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 
 /**
  * Home screen - shows the post feed
@@ -53,11 +61,33 @@ fun HomeScreen(
     tabName: String = "Amigos",
     authViewModel: AuthViewModel? = null,
     refreshTrigger: Int = 0,
-    onAuthorClick: (String) -> Unit = {}
+    onAuthorClick: (String) -> Unit = {},
+    onScrollDelta: (Float) -> Unit = {}
 ) {
     var posts by remember { mutableStateOf<List<PostResponse>>(emptyList()) }
     var isLoading by remember { mutableStateOf(false) }
     val coroutineScope = rememberCoroutineScope()
+    val listState = rememberLazyListState()
+
+    // Track scroll direction and notify parent for top bar animation
+    LaunchedEffect(listState) {
+        var prevIndex = listState.firstVisibleItemIndex
+        var prevScrollOffset = listState.firstVisibleItemScrollOffset
+        snapshotFlow {
+            Triple(listState.firstVisibleItemIndex, listState.firstVisibleItemScrollOffset, listState.isScrollInProgress)
+        }.collect { (index, offset, isScrolling) ->
+            if (isScrolling) {
+                val delta = if (index != prevIndex) {
+                    if (index > prevIndex) -50f else 50f
+                } else {
+                    (prevScrollOffset - offset).toFloat()
+                }
+                onScrollDelta(delta)
+            }
+            prevIndex = index
+            prevScrollOffset = offset
+        }
+    }
 
     // Load feed - re-execute when tabName or refreshTrigger changes
     LaunchedEffect(tabName, refreshTrigger) {
@@ -130,6 +160,7 @@ fun HomeScreen(
             }
         } else {
             LazyColumn(
+                state = listState,
                 modifier = Modifier
                     .fillMaxSize()
                     .background(MaterialTheme.colorScheme.background),
@@ -198,78 +229,56 @@ fun CreatePostDialog(
             Text(
                 text = "Crear publicacion",
                 fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface
+                style = MaterialTheme.typography.titleLarge
             )
         },
         text = {
-            Column {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                // Text input
                 OutlinedTextField(
                     value = content,
-                    onValueChange = {
-                        content = it
-                        error = ""
-                    },
-                    placeholder = { Text("Que estas pensando?") },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(120.dp),
-                    maxLines = 6,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = MaterialTheme.colorScheme.primary,
-                        unfocusedBorderColor = MaterialTheme.colorScheme.outline,
-                        cursorColor = MaterialTheme.colorScheme.primary
-                    ),
-                    shape = RoundedCornerShape(12.dp)
+                    onValueChange = { content = it },
+                    label = { Text("Que estas pensando?") },
+                    modifier = Modifier.fillMaxWidth(),
+                    maxLines = 4,
+                    enabled = !isPosting
                 )
 
-                // Selected video preview
-                if (selectedVideo != null) {
-                    Spacer(modifier = Modifier.height(8.dp))
+                // Media type selector
+                if (!isPosting) {
                     Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(MaterialTheme.colorScheme.surfaceVariant)
-                            .padding(12.dp)
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Icon(
-                            Icons.Filled.Movie,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(32.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "Video seleccionado",
-                                style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = FontWeight.SemiBold,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                            Text(
-                                text = "Se procesara como HLS despues de subir",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        IconButton(
-                            onClick = onRemoveVideo,
-                            modifier = Modifier.size(24.dp)
+                        // Image button
+                        OutlinedButton(
+                            onClick = onAddImage,
+                            modifier = Modifier.weight(1f),
+                            enabled = selectedVideo == null
                         ) {
-                            Icon(
-                                Icons.Filled.Close,
-                                contentDescription = "Quitar video",
-                                modifier = Modifier.size(16.dp),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                            Icon(Icons.Default.Image, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Imagen", fontSize = 12.sp)
+                        }
+
+                        // Video button
+                        OutlinedButton(
+                            onClick = onAddVideo,
+                            modifier = Modifier.weight(1f),
+                            enabled = selectedImages.isEmpty()
+                        ) {
+                            Icon(Icons.Default.Movie, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Video", fontSize = 12.sp)
                         }
                     }
                 }
 
-                // Selected images thumbnails
+                // Selected images preview
                 if (selectedImages.isNotEmpty()) {
-                    Spacer(modifier = Modifier.height(8.dp))
                     LazyRow(
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
@@ -283,85 +292,81 @@ fun CreatePostDialog(
                                         .clip(RoundedCornerShape(8.dp)),
                                     contentScale = ContentScale.Crop
                                 )
-                                // Remove button
-                                IconButton(
-                                    onClick = { onRemoveImage(uri) },
-                                    modifier = Modifier
-                                        .align(Alignment.TopEnd)
-                                        .size(24.dp)
-                                        .background(
-                                            MaterialTheme.colorScheme.surface.copy(alpha = 0.8f),
-                                            CircleShape
+                                if (!isPosting) {
+                                    IconButton(
+                                        onClick = { onRemoveImage(uri) },
+                                        modifier = Modifier
+                                            .align(Alignment.TopEnd)
+                                            .size(24.dp)
+                                            .background(
+                                                MaterialTheme.colorScheme.error,
+                                                CircleShape
+                                            )
+                                    ) {
+                                        Icon(
+                                            Icons.Default.Close,
+                                            contentDescription = "Quitar",
+                                            tint = MaterialTheme.colorScheme.onError,
+                                            modifier = Modifier.size(14.dp)
                                         )
-                                ) {
-                                    Icon(
-                                        Icons.Filled.Close,
-                                        contentDescription = "Quitar imagen",
-                                        modifier = Modifier.size(14.dp),
-                                        tint = MaterialTheme.colorScheme.onSurface
-                                    )
+                                    }
                                 }
                             }
                         }
                     }
                 }
 
-                // Add image / video buttons
-                Spacer(modifier = Modifier.height(8.dp))
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    // Add image button
-                    OutlinedButton(
-                        onClick = onAddImage,
-                        enabled = !isPosting && selectedVideo == null,
-                        shape = RoundedCornerShape(12.dp),
-                        colors = ButtonDefaults.outlinedButtonColors(
-                            contentColor = MaterialTheme.colorScheme.primary
-                        )
+                // Selected video preview
+                if (selectedVideo != null) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(MaterialTheme.colorScheme.surfaceVariant)
+                            .padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
                         Icon(
-                            Icons.Filled.Image,
+                            Icons.Default.Movie,
                             contentDescription = null,
-                            modifier = Modifier.size(18.dp)
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(32.dp)
                         )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            if (selectedImages.isEmpty()) "Imagen" else "Otra"
-                        )
-                    }
-
-                    // Add video button
-                    OutlinedButton(
-                        onClick = onAddVideo,
-                        enabled = !isPosting && selectedImages.isEmpty(),
-                        shape = RoundedCornerShape(12.dp),
-                        colors = ButtonDefaults.outlinedButtonColors(
-                            contentColor = MaterialTheme.colorScheme.primary
-                        )
-                    ) {
-                        Icon(
-                            Icons.Filled.Movie,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("Video")
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Video seleccionado",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Medium
+                            )
+                            Text(
+                                text = selectedVideo.lastPathSegment ?: "Video",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        if (!isPosting) {
+                            IconButton(onClick = onRemoveVideo) {
+                                Icon(
+                                    Icons.Default.Close,
+                                    contentDescription = "Quitar video",
+                                    tint = MaterialTheme.colorScheme.error
+                                )
+                            }
+                        }
                     }
                 }
 
-                // Upload progress
-                if (uploadProgress.isNotBlank()) {
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically
+                // Progress indicator
+                if (isPosting) {
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(16.dp),
-                            strokeWidth = 2.dp,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
+                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                        Spacer(modifier = Modifier.height(4.dp))
                         Text(
                             text = uploadProgress,
                             style = MaterialTheme.typography.bodySmall,
@@ -370,8 +375,8 @@ fun CreatePostDialog(
                     }
                 }
 
+                // Error message
                 if (error.isNotBlank()) {
-                    Spacer(modifier = Modifier.height(8.dp))
                     Text(
                         text = error,
                         color = MaterialTheme.colorScheme.error,
@@ -383,100 +388,185 @@ fun CreatePostDialog(
         confirmButton = {
             TextButton(
                 onClick = {
-                    if (content.isBlank() && selectedImages.isEmpty() && selectedVideo == null) {
-                        error = "Escribe algo, agrega una imagen o un video"
-                        return@TextButton
-                    }
-                    isPosting = true
-                    coroutineScope.launch {
-                        try {
-                            val token = AusoApiClient.getToken()
-                            if (token != null) {
-                                val textContent = content.trim()
+                    if (isPosting) return@TextButton
 
-                                if (selectedVideo != null) {
-                                    // Video post
-                                    uploadProgress = "Subiendo video..."
-                                    val videoPart = AusoApiClient.uriToMultipartPart(context, selectedVideo, "file")
-                                    if (videoPart != null) {
-                                        val response = AusoApiClient.api.createVideoPost(
-                                            "Bearer $token",
-                                            videoPart
-                                        )
-                                        if (response.isSuccessful) {
-                                            uploadProgress = "Video recibido, procesando..."
-                                            onPostCreated()
-                                            onDismiss()
-                                        } else {
-                                            error = "Error al subir video: ${response.code()}"
-                                        }
-                                    } else {
-                                        error = "No se pudo leer el archivo de video"
+                    when {
+                        selectedVideo != null -> {
+                            // Video post
+                            isPosting = true
+                            error = ""
+                            coroutineScope.launch {
+                                try {
+                                    val token = AusoApiClient.getToken()
+                                    if (token == null) {
+                                        error = "No autenticado"
+                                        isPosting = false
+                                        return@launch
                                     }
-                                } else if (selectedImages.isEmpty()) {
-                                    // Text-only post
-                                    val request = CreateTextPostRequest(content = textContent)
-                                    val response = AusoApiClient.api.createTextPost("Bearer $token", request)
+
+                                    // Step 1: Init video upload
+                                    uploadProgress = "Inicializando..."
+                                    val initResponse = AusoApiClient.api.initVideoUpload(
+                                        "Bearer $token",
+                                        com.auso.social.network.model.InitVideoUploadRequest(
+                                            content = content.ifBlank { null }
+                                        )
+                                    )
+                                    if (!initResponse.isSuccessful) {
+                                        error = "Error al iniciar subida: ${initResponse.code()}"
+                                        isPosting = false
+                                        return@launch
+                                    }
+                                    val uploadId = initResponse.body()?.uploadId ?: run {
+                                        error = "No se recibio upload_id"
+                                        isPosting = false
+                                        return@launch
+                                    }
+
+                                    // Step 2: Upload video data
+                                    uploadProgress = "Subiendo video..."
+                                    val inputStream = context.contentResolver.openInputStream(selectedVideo)
+                                    if (inputStream == null) {
+                                        error = "No se pudo abrir el video"
+                                        isPosting = false
+                                        return@launch
+                                    }
+
+                                    val bufferSize = 64 * 1024
+                                    val buffer = ByteArray(bufferSize)
+                                    var totalRead = 0L
+                                    var bytesRead: Int
+
+                                    inputStream.use { stream ->
+                                        while (stream.read(buffer).also { bytesRead = it } != -1) {
+                                            val chunk = buffer.copyOf(bytesRead)
+                                            val uploadResponse = AusoApiClient.api.uploadVideoChunk(
+                                                "Bearer $token",
+                                                uploadId,
+                                                okio.Buffer().write(chunk)
+                                            )
+                                            if (!uploadResponse.isSuccessful) {
+                                                error = "Error subiendo video: ${uploadResponse.code()}"
+                                                isPosting = false
+                                                return@launch
+                                            }
+                                            totalRead += bytesRead
+                                            uploadProgress = "Subiendo video... ${totalRead / 1024} KB"
+                                        }
+                                    }
+
+                                    // Step 3: Complete video upload
+                                    uploadProgress = "Procesando video..."
+                                    val completeResponse = AusoApiClient.api.completeVideoUpload(
+                                        "Bearer $token",
+                                        uploadId
+                                    )
+                                    if (!completeResponse.isSuccessful) {
+                                        error = "Error al procesar video: ${completeResponse.code()}"
+                                        isPosting = false
+                                        return@launch
+                                    }
+
+                                    uploadProgress = "Publicado!"
+                                    onPostCreated()
+                                    onDismiss()
+                                } catch (e: Exception) {
+                                    error = "Error: ${e.message}"
+                                } finally {
+                                    isPosting = false
+                                }
+                            }
+                        }
+                        selectedImages.isNotEmpty() -> {
+                            // Image pack post
+                            isPosting = true
+                            error = ""
+                            coroutineScope.launch {
+                                try {
+                                    val token = AusoApiClient.getToken()
+                                    if (token == null) {
+                                        error = "No autenticado"
+                                        isPosting = false
+                                        return@launch
+                                    }
+
+                                    uploadProgress = "Subiendo imagenes..."
+                                    val imageParts = selectedImages.mapIndexed { index, uri ->
+                                        val inputStream = context.contentResolver.openInputStream(uri)!!
+                                        val bytes = inputStream.readBytes()
+                                        inputStream.close()
+                                        okhttp3.MultipartBody.Part.createFormData(
+                                            "images",
+                                            "image_$index.jpg",
+                                            okhttp3.RequestBody.create(
+                                                okhttp3.MediaType.parse("image/*")!!,
+                                                bytes
+                                            )
+                                        )
+                                    }
+
+                                    val contentBody = okhttp3.RequestBody.create(
+                                        okhttp3.MediaType.parse("text/plain"),
+                                        content.ifBlank { " " }
+                                    )
+
+                                    val response = AusoApiClient.api.createImagePackPost(
+                                        "Bearer $token",
+                                        contentBody,
+                                        imageParts
+                                    )
                                     if (response.isSuccessful) {
                                         onPostCreated()
                                         onDismiss()
                                     } else {
-                                        error = "Error al publicar"
+                                        error = "Error al publicar: ${response.code()}"
                                     }
-                                } else {
-                                    // Post with images: create image-pack post, then upload images
-                                    uploadProgress = "Subiendo imagenes..."
-                                    val request = CreateImagePackPostRequest(
-                                        content = textContent.ifBlank { null },
-                                        layoutMode = "carousel"
+                                } catch (e: Exception) {
+                                    error = "Error: ${e.message}"
+                                } finally {
+                                    isPosting = false
+                                }
+                            }
+                        }
+                        content.isNotBlank() -> {
+                            // Text post
+                            isPosting = true
+                            error = ""
+                            coroutineScope.launch {
+                                try {
+                                    val token = AusoApiClient.getToken()
+                                    if (token == null) {
+                                        error = "No autenticado"
+                                        isPosting = false
+                                        return@launch
+                                    }
+
+                                    val request = CreateTextPostRequest(content = content)
+                                    val response = AusoApiClient.api.createTextPost(
+                                        "Bearer $token",
+                                        request
                                     )
-                                    val postResponse = AusoApiClient.api.createImagePackPost("Bearer $token", request)
-                                    if (postResponse.isSuccessful) {
-                                        val postId = postResponse.body()?.id
-                                        if (postId != null) {
-                                            // Upload images to the post
-                                            val fileParts = selectedImages.mapNotNull { uri ->
-                                                AusoApiClient.uriToMultipartPart(context, uri)
-                                            }
-                                            if (fileParts.isNotEmpty()) {
-                                                try {
-                                                    AusoApiClient.api.addImagesToPost(
-                                                        "Bearer $token",
-                                                        postId,
-                                                        fileParts
-                                                    )
-                                                } catch (_: Exception) {
-                                                    // Images failed to upload but post was created
-                                                }
-                                            }
-                                        }
+                                    if (response.isSuccessful) {
                                         onPostCreated()
                                         onDismiss()
                                     } else {
-                                        error = "Error al crear publicacion con imagenes"
+                                        error = "Error al publicar: ${response.code()}"
                                     }
+                                } catch (e: Exception) {
+                                    error = "Error: ${e.message}"
+                                } finally {
+                                    isPosting = false
                                 }
-                            } else {
-                                error = "No autenticado"
                             }
-                        } catch (e: Exception) {
-                            error = "Error de conexion: ${e.message}"
                         }
-                        isPosting = false
-                        uploadProgress = ""
                     }
                 },
-                enabled = !isPosting
+                enabled = !isPosting && (content.isNotBlank() || selectedImages.isNotEmpty() || selectedVideo != null),
+                colors = ButtonDefaults.textButtonColors(
+                    contentColor = MaterialTheme.colorScheme.primary
+                )
             ) {
-                if (isPosting) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(18.dp),
-                        color = MaterialTheme.colorScheme.primary,
-                        strokeWidth = 2.dp
-                    )
-                } else {
-                    Text("Publicar", color = MaterialTheme.colorScheme.primary)
-                }
+                Text(if (isPosting) "Publicando..." else "Publicar")
             }
         },
         dismissButton = {
@@ -503,6 +593,13 @@ fun PostCard(
     val context = LocalContext.current
     var isSaved by remember { mutableStateOf(false) }
     var showMoreMenu by remember { mutableStateOf(false) }
+
+    // Screen dimensions for responsive content sizing
+    val configuration = LocalConfiguration.current
+    val screenWidthDp = configuration.screenWidthDp
+    val screenHeightDp = configuration.screenHeightDp
+    // Max media height: ~55% of screen to leave room for other post elements and nav
+    val maxMediaHeightDp = (screenHeightDp * 0.55).roundToInt()
 
     val cardColor = if (post.backgroundColor != null) {
         try {
@@ -652,19 +749,19 @@ fun PostCard(
             )
         }
 
-        // Post images - FULL WIDTH, no padding, no rounded corners
+        // Post images - FULL WIDTH, calculated max height based on screen
         if (postResponse.images.isNotEmpty()) {
             Spacer(modifier = Modifier.height(8.dp))
             val images = postResponse.images
             when {
                 images.size == 1 -> {
-                    // Single image - full width, no rounding
+                    // Single image - full width, responsive max height
                     AsyncImage(
                         model = AusoApiClient.fullUrl(images[0].imageUrl),
                         contentDescription = "Imagen del post",
                         modifier = Modifier
                             .fillMaxWidth()
-                            .heightIn(max = 350.dp),
+                            .heightIn(max = maxMediaHeightDp.dp),
                         contentScale = ContentScale.Crop
                     )
                 }
@@ -680,7 +777,7 @@ fun PostCard(
                                 contentDescription = "Imagen del post",
                                 modifier = Modifier
                                     .weight(1f)
-                                    .heightIn(max = 220.dp),
+                                    .heightIn(max = (maxMediaHeightDp * 0.6).roundToInt().dp),
                                 contentScale = ContentScale.Crop
                             )
                         }
@@ -703,7 +800,7 @@ fun PostCard(
                                     contentDescription = "Imagen del post",
                                     modifier = Modifier
                                         .weight(1f)
-                                        .heightIn(max = 180.dp),
+                                        .heightIn(max = (maxMediaHeightDp * 0.5).roundToInt().dp),
                                     contentScale = ContentScale.Crop
                                 )
                             }
@@ -723,7 +820,7 @@ fun PostCard(
                                             contentDescription = "Imagen del post",
                                             modifier = Modifier
                                                 .fillMaxWidth()
-                                                .heightIn(max = 180.dp),
+                                                .heightIn(max = (maxMediaHeightDp * 0.5).roundToInt().dp),
                                             contentScale = ContentScale.Crop
                                         )
                                         // Show "+N more" overlay on last visible image
@@ -732,7 +829,7 @@ fun PostCard(
                                             Box(
                                                 modifier = Modifier
                                                     .fillMaxWidth()
-                                                    .height(180.dp)
+                                                    .height((maxMediaHeightDp * 0.5).roundToInt().dp)
                                                     .background(androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.5f)),
                                                 contentAlignment = Alignment.Center
                                             ) {
@@ -753,12 +850,15 @@ fun PostCard(
             }
         }
 
-        // Video player
+        // Video player - uses aspect ratio from video data for proper sizing
         if (post.postType == "video" && postResponse.video != null) {
             VideoPlayer(
                 videoUrl = AusoApiClient.fullUrl(postResponse.video.hlsMasterPlaylistUrl) ?: "",
                 thumbnailUrl = AusoApiClient.fullUrl(postResponse.video.thumbnailUrl),
-                duration = postResponse.video.duration
+                duration = postResponse.video.duration,
+                videoWidth = postResponse.video.width,
+                videoHeight = postResponse.video.height,
+                maxMediaHeightDp = maxMediaHeightDp
             )
         }
 
@@ -903,16 +1003,33 @@ fun PostCard(
 /**
  * Video player composable using ExoPlayer (Media3) with HLS support.
  * Shows thumbnail initially, plays on tap.
+ * Calculates proper height based on video aspect ratio to prevent overlapping.
  */
 @Composable
 fun VideoPlayer(
     videoUrl: String,
     thumbnailUrl: String? = null,
-    duration: Double = 0.0
+    duration: Double = 0.0,
+    videoWidth: Int = 0,
+    videoHeight: Int = 0,
+    maxMediaHeightDp: Int = 400
 ) {
     val context = LocalContext.current
     var isPlaying by remember { mutableStateOf(false) }
     var isMuted by remember { mutableStateOf(true) }
+
+    // Calculate aspect ratio height based on video dimensions
+    val configuration = LocalConfiguration.current
+    val screenWidthPx = configuration.screenWidthDp
+    val aspectRatio = if (videoWidth > 0 && videoHeight > 0) {
+        videoWidth.toFloat() / videoHeight.toFloat()
+    } else {
+        16f / 9f // default to 16:9
+    }
+    // Calculate video height in dp based on screen width and aspect ratio
+    val calculatedHeightDp = (screenWidthPx / aspectRatio).roundToInt()
+    // Clamp to max media height
+    val videoHeightDp = minOf(calculatedHeightDp, maxMediaHeightDp)
 
     val exoPlayer = remember {
         androidx.media3.exoplayer.ExoPlayer.Builder(context).build().apply {
@@ -933,7 +1050,7 @@ fun VideoPlayer(
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .heightIn(max = 350.dp)
+            .height(videoHeightDp.dp)
     ) {
         // Video surface
         AndroidView(
@@ -941,7 +1058,7 @@ fun VideoPlayer(
                 androidx.media3.ui.PlayerView(ctx).apply {
                     player = exoPlayer
                     useController = false
-                    resizeMode = androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIXED_WIDTH
+                    resizeMode = androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT
                 }
             },
             modifier = Modifier.fillMaxSize()
@@ -952,7 +1069,7 @@ fun VideoPlayer(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.3f)),
+                    .background(androidx.compose.ui.graphics.Color.Black),
                 contentAlignment = Alignment.Center
             ) {
                 if (!thumbnailUrl.isNullOrBlank()) {
@@ -966,15 +1083,16 @@ fun VideoPlayer(
 
                 Box(
                     modifier = Modifier
-                        .size(64.dp)
+                        .size(56.dp)
                         .clip(CircleShape)
-                        .background(androidx.compose.ui.graphics.Color.White.copy(alpha = 0.9f)),
+                        .background(androidx.compose.ui.graphics.Color.White.copy(alpha = 0.85f)),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text(
-                        text = "\u25B6",
-                        fontSize = 28.sp,
-                        color = androidx.compose.ui.graphics.Color.Black
+                    Icon(
+                        imageVector = Icons.Filled.PlayArrow,
+                        contentDescription = "Reproducir",
+                        tint = androidx.compose.ui.graphics.Color.Black,
+                        modifier = Modifier.size(32.dp)
                     )
                 }
             }
@@ -1014,7 +1132,7 @@ fun VideoPlayer(
             )
         }
 
-        // Mute/unmute button
+        // Mute/unmute button with proper icon
         IconButton(
             onClick = {
                 isMuted = !isMuted
@@ -1024,11 +1142,16 @@ fun VideoPlayer(
                 .align(Alignment.BottomStart)
                 .padding(4.dp)
                 .size(32.dp)
+                .background(
+                    androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.4f),
+                    CircleShape
+                )
         ) {
-            Text(
-                text = if (isMuted) "Mute" else "Sound",
-                fontSize = 11.sp,
-                color = androidx.compose.ui.graphics.Color.White
+            Icon(
+                imageVector = if (isMuted) Icons.Filled.VolumeOff else Icons.Filled.VolumeUp,
+                contentDescription = if (isMuted) "Activar sonido" else "Silenciar",
+                tint = androidx.compose.ui.graphics.Color.White,
+                modifier = Modifier.size(18.dp)
             )
         }
     }
