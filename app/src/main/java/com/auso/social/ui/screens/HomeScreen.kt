@@ -669,8 +669,8 @@ fun PostCard(
 }
 
 /**
- * Minimal video player for the feed — only thumbnail + play + timeline at bottom + mute
- * Single tap = open detail overlay; controls show play/pause, mute, and seekbar
+ * Minimal video player for the feed — thumbnail + play/pause center + progress bar at bottom
+ * Tap video = open full-screen detail overlay; play/pause button in center; auto-loop
  */
 @Composable
 fun VideoPlayerFeed(
@@ -689,7 +689,6 @@ fun VideoPlayerFeed(
 ) {
     val context = LocalContext.current
     var isPlaying by remember { mutableStateOf(false) }
-    var showControls by remember { mutableStateOf(false) }
     var currentPosition by remember { mutableLongStateOf(0L) }
     var totalDuration by remember { mutableLongStateOf(0L) }
 
@@ -705,6 +704,7 @@ fun VideoPlayerFeed(
             prepare()
             playWhenReady = false
             volume = if (isMuted) 0f else 1f
+            repeatMode = androidx.media3.common.Player.REPEAT_MODE_ALL
         }
     }
 
@@ -712,9 +712,13 @@ fun VideoPlayerFeed(
         val listener = object : androidx.media3.common.Player.Listener {
             override fun onPlaybackStateChanged(playbackState: Int) {
                 if (playbackState == androidx.media3.common.Player.STATE_READY) totalDuration = exoPlayer.duration.coerceAtLeast(0L)
-                if (playbackState == androidx.media3.common.Player.STATE_ENDED) { isPlaying = false; onPlayChanged(false) }
+                // Loop is handled by repeatMode — no need to handle STATE_ENDED
             }
-            override fun onIsPlayingChanged(playing: Boolean) { isPlaying = playing; if (playing) totalDuration = exoPlayer.duration.coerceAtLeast(0L) }
+            override fun onIsPlayingChanged(playing: Boolean) {
+                isPlaying = playing
+                if (playing) totalDuration = exoPlayer.duration.coerceAtLeast(0L)
+                onPlayChanged(playing)
+            }
         }
         exoPlayer.addListener(listener)
         onDispose { exoPlayer.removeListener(listener) }
@@ -728,14 +732,9 @@ fun VideoPlayerFeed(
         }
     }
 
-    // Auto-hide controls after 3s
-    LaunchedEffect(showControls, isPlaying) {
-        if (showControls && isPlaying) { kotlinx.coroutines.delay(3000); showControls = false }
-    }
-
     LaunchedEffect(isAutoPlay) {
-        if (isAutoPlay) { exoPlayer.playWhenReady = true; isPlaying = true; showControls = false }
-        else { exoPlayer.playWhenReady = false; isPlaying = false }
+        if (isAutoPlay) { exoPlayer.playWhenReady = true }
+        else { exoPlayer.playWhenReady = false }
     }
 
     LaunchedEffect(isMuted) { exoPlayer.volume = if (isMuted) 0f else 1f }
@@ -757,13 +756,21 @@ fun VideoPlayerFeed(
             modifier = Modifier.fillMaxSize()
         )
 
-        // Thumbnail when not playing
+        // Thumbnail when not playing and not auto-play
         if (!isPlaying && !isAutoPlay) {
             Box(modifier = Modifier.fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) {
                 if (!thumbnailUrl.isNullOrBlank()) {
                     AsyncImage(model = thumbnailUrl, contentDescription = "Thumbnail", modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
                 }
-                Box(modifier = Modifier.size(56.dp).clip(CircleShape).background(Color.White.copy(alpha = 0.85f)), contentAlignment = Alignment.Center) {
+                // Play button in center — tap to start playing
+                Box(
+                    modifier = Modifier
+                        .size(56.dp)
+                        .clip(CircleShape)
+                        .background(Color.White.copy(alpha = 0.85f))
+                        .clickable { exoPlayer.playWhenReady = true },
+                    contentAlignment = Alignment.Center
+                ) {
                     Icon(Icons.Filled.PlayArrow, contentDescription = "Reproducir", tint = Color.Black, modifier = Modifier.size(32.dp))
                 }
                 if (duration > 0) {
@@ -773,42 +780,51 @@ fun VideoPlayerFeed(
             }
         }
 
-        // Tap to toggle controls
+        // When video is playing: tap anywhere on the video = open full-screen overlay
         if (isPlaying || isAutoPlay) {
-            Box(modifier = Modifier.fillMaxSize().clickable { showControls = !showControls })
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null
+                    ) { onClick() }
+            )
+
+            // Center play/pause button — toggle play/pause
+            Box(
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .size(52.dp)
+                    .clip(CircleShape)
+                    .background(Color.Black.copy(alpha = 0.4f))
+                    .clickable {
+                        if (exoPlayer.isPlaying) { exoPlayer.pause() }
+                        else { exoPlayer.play() }
+                    },
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    if (exoPlayer.isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(28.dp)
+                )
+            }
         }
 
-        // Minimal controls: seekbar + play/pause + mute at bottom edge
-        AnimatedVisibility(
-            visible = showControls && (isPlaying || isAutoPlay),
-            enter = fadeIn(),
-            exit = fadeOut(),
-            modifier = Modifier.align(Alignment.BottomCenter)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth().background(Color.Black.copy(alpha = 0.5f)).padding(horizontal = 8.dp, vertical = 4.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // Play/Pause
-                IconButton(onClick = {
-                    if (exoPlayer.isPlaying) { exoPlayer.pause(); isPlaying = false; onPlayChanged(false) }
-                    else { exoPlayer.play(); isPlaying = true; onPlayChanged(true) }
-                }, modifier = Modifier.size(28.dp)) {
-                    Icon(if (exoPlayer.isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
-                }
-                // Seekbar
-                val progress = if (totalDuration > 0) (currentPosition.toFloat() / totalDuration.toFloat()).coerceIn(0f, 1f) else 0f
-                Slider(
-                    value = progress,
-                    onValueChange = { fraction -> val seekPosition = (fraction * totalDuration).toLong(); exoPlayer.seekTo(seekPosition); currentPosition = seekPosition },
-                    colors = SliderDefaults.colors(thumbColor = Color.White, activeTrackColor = Color.White, inactiveTrackColor = Color.White.copy(alpha = 0.3f)),
-                    modifier = Modifier.weight(1f)
-                )
-                // Mute
-                IconButton(onClick = { onMuteChanged(!isMuted) }, modifier = Modifier.size(28.dp)) {
-                    Icon(if (isMuted) Icons.Filled.VolumeOff else Icons.Filled.VolumeUp, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
-                }
-            }
+        // Visual-only progress bar at the bottom edge of the video
+        if (isPlaying || isAutoPlay) {
+            val progress = if (totalDuration > 0) (currentPosition.toFloat() / totalDuration.toFloat()).coerceIn(0f, 1f) else 0f
+            LinearProgressIndicator(
+                progress = { progress },
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .height(2.dp),
+                color = Color.White,
+                trackColor = Color.White.copy(alpha = 0.3f),
+            )
         }
     }
 }
@@ -841,6 +857,7 @@ fun VideoDetailOverlay(
             prepare()
             playWhenReady = true
             volume = if (isMuted) 0f else 1f
+            repeatMode = androidx.media3.common.Player.REPEAT_MODE_ALL
         }
     }
 
@@ -848,7 +865,7 @@ fun VideoDetailOverlay(
         val listener = object : androidx.media3.common.Player.Listener {
             override fun onPlaybackStateChanged(playbackState: Int) {
                 if (playbackState == androidx.media3.common.Player.STATE_READY) totalDuration = exoPlayer.duration.coerceAtLeast(0L)
-                if (playbackState == androidx.media3.common.Player.STATE_ENDED) { isPlaying = false }
+                // Loop handled by repeatMode
             }
             override fun onIsPlayingChanged(playing: Boolean) { isPlaying = playing; if (playing) totalDuration = exoPlayer.duration.coerceAtLeast(0L) }
         }
@@ -898,7 +915,7 @@ fun VideoDetailOverlay(
                 Icon(Icons.Filled.ArrowBack, contentDescription = "Volver", tint = Color.White, modifier = Modifier.size(22.dp))
             }
 
-            // Controls overlay
+            // Controls overlay — play/pause + seekbar + mute at bottom edge
             androidx.compose.animation.AnimatedVisibility(visible = showControls, enter = fadeIn(), exit = fadeOut(), modifier = Modifier.align(Alignment.BottomCenter)) {
                 Row(
                     modifier = Modifier.fillMaxWidth().background(Color.Black.copy(alpha = 0.5f)).padding(horizontal = 8.dp, vertical = 4.dp),
@@ -906,19 +923,11 @@ fun VideoDetailOverlay(
                 ) {
                     // Play/Pause
                     IconButton(onClick = {
-                        if (exoPlayer.isPlaying) { exoPlayer.pause(); isPlaying = false }
-                        else { exoPlayer.play(); isPlaying = true }
+                        if (exoPlayer.isPlaying) { exoPlayer.pause() }
+                        else { exoPlayer.play() }
                     }, modifier = Modifier.size(28.dp)) {
                         Icon(if (exoPlayer.isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
                     }
-                    // Time elapsed
-                    val elapsedSec = (currentPosition / 1000).toInt()
-                    val totalSec = (totalDuration / 1000).toInt()
-                    Text(
-                        text = String.format("%d:%02d / %d:%02d", elapsedSec / 60, elapsedSec % 60, totalSec / 60, totalSec % 60),
-                        color = Color.White, style = MaterialTheme.typography.labelSmall
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
                     // Seekbar
                     val progress = if (totalDuration > 0) (currentPosition.toFloat() / totalDuration.toFloat()).coerceIn(0f, 1f) else 0f
                     Slider(

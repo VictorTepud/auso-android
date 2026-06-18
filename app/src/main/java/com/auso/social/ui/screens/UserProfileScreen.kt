@@ -160,16 +160,16 @@ fun UserProfileScreen(
                     }
                 }
 
-                // Profile photo overlapping cover
+                // Profile photo overlapping cover — use offset instead of negative padding
                 item {
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(start = 16.dp, top = (-48).dp)
                     ) {
                         Box(
                             modifier = Modifier
                                 .size(96.dp)
+                                .offset(x = 16.dp, y = (-48).dp)
                                 .clip(CircleShape)
                                 .background(MaterialTheme.colorScheme.primary),
                             contentAlignment = Alignment.Center
