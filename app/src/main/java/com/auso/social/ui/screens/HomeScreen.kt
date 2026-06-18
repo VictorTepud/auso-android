@@ -2,6 +2,7 @@ package com.auso.social.ui.screens
 
 import android.content.Intent
 import android.net.Uri
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.fadeIn
@@ -10,6 +11,7 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -29,9 +31,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -694,9 +699,16 @@ fun VideoPlayerFeed(
 
     val configuration = LocalConfiguration.current
     val screenWidthPx = configuration.screenWidthDp
+    val screenHeightPx = configuration.screenHeightDp
+    val isVerticalVideo = videoWidth > 0 && videoHeight > 0 && videoWidth < videoHeight
     val aspectRatio = if (videoWidth > 0 && videoHeight > 0) videoWidth.toFloat() / videoHeight.toFloat() else 16f / 9f
     val calculatedHeightDp = (screenWidthPx / aspectRatio).roundToInt()
-    val videoHeightDp = minOf(calculatedHeightDp, maxMediaHeightDp)
+    // For vertical videos, use more screen height (up to 80%), for horizontal keep the limit
+    val videoHeightDp = if (isVerticalVideo) {
+        minOf(calculatedHeightDp, (screenHeightPx * 0.80).roundToInt())
+    } else {
+        minOf(calculatedHeightDp, maxMediaHeightDp)
+    }
 
     val exoPlayer = remember {
         androidx.media3.exoplayer.ExoPlayer.Builder(context).build().apply {
@@ -832,6 +844,7 @@ fun VideoPlayerFeed(
 /**
  * Full-screen video detail overlay (YouTube-style)
  * Video at top, controls/details/likes in middle, comments at bottom
+ * Supports: system back button, swipe down to dismiss, vertical videos
  */
 @Composable
 fun VideoDetailOverlay(
@@ -849,6 +862,31 @@ fun VideoDetailOverlay(
     var currentPosition by remember { mutableLongStateOf(0L) }
     var totalDuration by remember { mutableLongStateOf(0L) }
     var showControls by remember { mutableStateOf(true) }
+
+    // Swipe-to-dismiss state
+    var offsetY by remember { mutableFloatStateOf(0f) }
+    val dismissThreshold = with(LocalDensity.current) { 200.dp.toPx() }
+
+    // Intercept system back button to close overlay instead of app
+    BackHandler(onBack = onBack)
+
+    // Calculate video aspect ratio — support vertical (portrait) videos
+    val videoWidth = postResponse.video?.width ?: 0
+    val videoHeight = postResponse.video?.height ?: 0
+    val videoAspectRatio = if (videoWidth > 0 && videoHeight > 0) {
+        videoWidth.toFloat() / videoHeight.toFloat()
+    } else {
+        16f / 9f
+    }
+    // For vertical videos, cap the height to 70% of screen
+    val configuration = LocalConfiguration.current
+    val screenHeightDp = configuration.screenHeightDp
+    val isVerticalVideo = videoAspectRatio < 1f
+    val videoBoxHeightDp = if (isVerticalVideo) {
+        (screenHeightDp * 0.70f).roundToInt()
+    } else {
+        -1 // use aspectRatio instead
+    }
 
     val exoPlayer = remember {
         androidx.media3.exoplayer.ExoPlayer.Builder(context).build().apply {
@@ -887,10 +925,40 @@ fun VideoDetailOverlay(
 
     LaunchedEffect(isMuted) { exoPlayer.volume = if (isMuted) 0f else 1f }
 
-    // Full screen overlay
-    Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-        // Video area
-        Box(modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f).background(Color.Black)) {
+    // Full screen overlay — respects system bars so nothing goes under them
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+            .statusBarsPadding()
+            .navigationBarsPadding()
+            .graphicsLayer { translationY = offsetY }
+            // Swipe down to dismiss gesture
+            .pointerInput(Unit) {
+                detectVerticalDragGestures(
+                    onVerticalDrag = { _, dragAmount ->
+                        // Only allow dragging down (positive offset)
+                        offsetY = (offsetY + dragAmount).coerceAtLeast(0f)
+                    },
+                    onDragEnd = {
+                        if (offsetY > dismissThreshold) {
+                            onBack()
+                        }
+                        offsetY = 0f
+                    },
+                    onDragCancel = {
+                        offsetY = 0f
+                    }
+                )
+            }
+    ) {
+        // Video area — respects video orientation
+        val videoBoxModifier = if (isVerticalVideo) {
+            Modifier.fillMaxWidth().height(videoBoxHeightDp.dp)
+        } else {
+            Modifier.fillMaxWidth().aspectRatio(videoAspectRatio)
+        }
+        Box(modifier = videoBoxModifier.background(Color.Black)) {
             AndroidView(
                 factory = { ctx ->
                     androidx.media3.ui.PlayerView(ctx).apply {
