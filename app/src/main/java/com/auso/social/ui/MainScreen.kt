@@ -10,8 +10,6 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.pager.HorizontalPager
-import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
@@ -50,6 +48,7 @@ import kotlinx.coroutines.launch
 /**
  * Main screen with bottom navigation bar and top bar
  * Top bar hides/shows on scroll with animation
+ * No HorizontalPager — tabs switch only via dropdown to avoid heavy rendering
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -60,18 +59,9 @@ fun MainScreen(
     val currentUser by authViewModel.currentUser.collectAsState()
     val coroutineScope = rememberCoroutineScope()
 
-    // Feed filter tabs for Home
+    // Feed filter tabs for Home — NO pager, just switch directly
     val feedTabs = listOf("Amigos", "Recomendado", "Explorar")
     var selectedFeedTab by remember { mutableIntStateOf(0) }
-    val pagerState = rememberPagerState(pageCount = { feedTabs.size })
-
-    // Sync pager with selected tab
-    LaunchedEffect(selectedFeedTab) {
-        pagerState.animateScrollToPage(selectedFeedTab)
-    }
-    LaunchedEffect(pagerState.currentPage) {
-        selectedFeedTab = pagerState.currentPage
-    }
 
     // Dropdown menu state
     var showFeedMenu by remember { mutableStateOf(false) }
@@ -81,7 +71,6 @@ fun MainScreen(
     // Measure actual top bar height (includes status bar + app bar)
     var measuredTopBarHeightPx by remember { mutableIntStateOf(0) }
     val density = LocalDensity.current
-    // Use measured height or fallback to ~112dp (64dp app bar + ~48dp status bar)
     val topBarHeightDp = if (measuredTopBarHeightPx > 0) {
         with(density) { measuredTopBarHeightPx.toDp() }
     } else {
@@ -91,7 +80,7 @@ fun MainScreen(
     // Global mute state for all videos - default is unmuted (audio ON)
     var isGlobalMuted by remember { mutableStateOf(false) }
 
-    // Currently playing video index - only one plays at a time
+    // Currently playing video id - only one plays at a time
     var currentlyPlayingVideoId by remember { mutableStateOf<String?>(null) }
 
     // Bottom nav
@@ -151,7 +140,6 @@ fun MainScreen(
     Scaffold(
         modifier = Modifier.background(MaterialTheme.colorScheme.background),
         bottomBar = {
-            // Bottom navigation with solid background
             NavigationBar(
                 containerColor = MaterialTheme.colorScheme.surface,
                 tonalElevation = 0.dp,
@@ -159,7 +147,6 @@ fun MainScreen(
             ) {
                 bottomNavItems.forEachIndexed { index, item ->
                     val selected = selectedBottomTab == index
-
                     NavigationBarItem(
                         icon = {
                             Icon(
@@ -174,7 +161,7 @@ fun MainScreen(
                         selected = selected,
                         onClick = { selectedBottomTab = index },
                         colors = NavigationBarItemDefaults.colors(
-                            indicatorColor = Color.Transparent // Remove the pill highlight behind active icon
+                            indicatorColor = Color.Transparent
                         )
                     )
                 }
@@ -186,40 +173,34 @@ fun MainScreen(
                 .fillMaxSize()
                 .padding(bottom = innerPadding.calculateBottomPadding())
         ) {
-            // Content fills the full area (behind the floating top bar)
+            // Content — no pager, only render the selected tab
             when (selectedBottomTab) {
                 0 -> {
-                    // Home: pager with swipe between feed tabs
-                    HorizontalPager(
-                        state = pagerState,
-                        modifier = Modifier.fillMaxSize()
-                    ) { page ->
-                        HomeScreen(
-                            tabName = feedTabs[page],
-                            authViewModel = authViewModel,
-                            refreshTrigger = refreshTrigger,
-                            onAuthorClick = { username ->
-                                viewingUsername = username
-                                showUserProfileScreen = true
-                            },
-                            onScrollDirection = { direction ->
-                                when {
-                                    direction > 0 -> isTopBarVisible = true
-                                    direction < 0 -> isTopBarVisible = false
-                                }
-                            },
-                            currentlyPlayingVideoId = currentlyPlayingVideoId,
-                            onVideoPlayChanged = { videoId ->
-                                currentlyPlayingVideoId = videoId
-                            },
-                            isGlobalMuted = isGlobalMuted,
-                            onMuteChanged = { muted ->
-                                isGlobalMuted = muted
-                            },
-                            topBarHeightDp = topBarHeightDp,
-                            isTopBarVisible = isTopBarVisible
-                        )
-                    }
+                    HomeScreen(
+                        tabName = feedTabs[selectedFeedTab],
+                        authViewModel = authViewModel,
+                        refreshTrigger = refreshTrigger,
+                        onAuthorClick = { username ->
+                            viewingUsername = username
+                            showUserProfileScreen = true
+                        },
+                        onScrollDirection = { direction ->
+                            when {
+                                direction > 0 -> isTopBarVisible = true
+                                direction < 0 -> isTopBarVisible = false
+                            }
+                        },
+                        currentlyPlayingVideoId = currentlyPlayingVideoId,
+                        onVideoPlayChanged = { videoId ->
+                            currentlyPlayingVideoId = videoId
+                        },
+                        isGlobalMuted = isGlobalMuted,
+                        onMuteChanged = { muted ->
+                            isGlobalMuted = muted
+                        },
+                        topBarHeightDp = topBarHeightDp,
+                        isTopBarVisible = isTopBarVisible
+                    )
                 }
                 1 -> SearchScreen()
                 2 -> VideosScreen()
@@ -243,7 +224,6 @@ fun MainScreen(
                     tonalElevation = 0.dp,
                     color = MaterialTheme.colorScheme.surface
                 ) {
-                    // Different top bars per tab
                     when (selectedBottomTab) {
                         0 -> {
                             TopAppBar(
@@ -354,9 +334,7 @@ fun MainScreen(
                                         fontSize = 18.sp
                                     )
                                 },
-                                colors = TopAppBarDefaults.topAppBarColors(
-                                    containerColor = Color.Transparent,
-                                )
+                                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
                             )
                         }
                         2 -> {
@@ -370,9 +348,7 @@ fun MainScreen(
                                         fontSize = 18.sp
                                     )
                                 },
-                                colors = TopAppBarDefaults.topAppBarColors(
-                                    containerColor = Color.Transparent,
-                                )
+                                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
                             )
                         }
                         3 -> {
@@ -386,32 +362,24 @@ fun MainScreen(
                                         fontSize = 18.sp
                                     )
                                 },
-                                colors = TopAppBarDefaults.topAppBarColors(
-                                    containerColor = Color.Transparent,
-                                )
+                                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
                             )
                         }
                     }
                 }
             }
 
-            // FAB only on Home tab, positioned above bottom bar
+            // FAB only on Home tab
             if (selectedBottomTab == 0) {
                 FloatingActionButton(
                     onClick = { showCreatePostDialog = true },
                     modifier = Modifier
                         .align(Alignment.BottomEnd)
-                        .padding(
-                            end = 16.dp,
-                            bottom = 16.dp
-                        ),
+                        .padding(end = 16.dp, bottom = 16.dp),
                     containerColor = MaterialTheme.colorScheme.primary,
                     contentColor = MaterialTheme.colorScheme.onPrimary
                 ) {
-                    Icon(
-                        Icons.Filled.Add,
-                        contentDescription = "Crear post"
-                    )
+                    Icon(Icons.Filled.Add, contentDescription = "Crear post")
                 }
             }
         }
@@ -425,9 +393,7 @@ fun MainScreen(
                 postImageUris = emptyList()
                 postVideoUri = null
             },
-            onPostCreated = {
-                refreshTrigger++
-            },
+            onPostCreated = { refreshTrigger++ },
             selectedImages = postImageUris,
             onAddImage = { postImagePicker.launch("image/*") },
             onRemoveImage = { uri -> postImageUris = postImageUris - uri },
