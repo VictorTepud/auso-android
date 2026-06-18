@@ -171,10 +171,12 @@ fun MainScreen(
             }
         }
     ) { innerPadding ->
+        // For Videos tab (TikTok-style), we want full-screen behind the bottom nav
+        val bottomPadding = if (selectedBottomTab == 2) 0.dp else innerPadding.calculateBottomPadding()
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(bottom = innerPadding.calculateBottomPadding())
+                .padding(bottom = bottomPadding)
         ) {
             // Content — no pager, only render the selected tab
             when (selectedBottomTab) {
@@ -209,13 +211,22 @@ fun MainScreen(
                     )
                 }
                 1 -> SearchScreen()
-                2 -> VideosScreen()
+                2 -> VideosScreen(
+                    isGlobalMuted = isGlobalMuted,
+                    onMuteChanged = { muted ->
+                        isGlobalMuted = muted
+                    },
+                    onAuthorClick = { username ->
+                        viewingUsername = username
+                        showUserProfileScreen = true
+                    }
+                )
                 3 -> AppsScreen()
             }
 
             // Floating top bar — overlays the content, slides in/out, hidden when video overlay is open
             AnimatedVisibility(
-                visible = isTopBarVisible && !isVideoOverlayOpen,
+                visible = isTopBarVisible && !isVideoOverlayOpen && selectedBottomTab != 2,
                 enter = slideInVertically(initialOffsetY = { -it }),
                 exit = slideOutVertically(targetOffsetY = { -it }),
                 modifier = Modifier.align(Alignment.TopCenter)

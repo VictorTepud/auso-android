@@ -56,7 +56,8 @@ interface AusoApi {
     suspend fun getFeed(
         @Header("Authorization") token: String,
         @Query("page") page: Int? = null,
-        @Query("limit") limit: Int? = null
+        @Query("limit") limit: Int? = null,
+        @Query("post_type") postType: String? = null
     ): Response<FeedResponse>
 
     @GET("api/v1/posts/{id}")

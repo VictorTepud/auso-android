@@ -699,8 +699,6 @@ fun VideoPlayerFeed(
     var isPlaying by remember { mutableStateOf(false) }
     var currentPosition by remember { mutableLongStateOf(0L) }
     var totalDuration by remember { mutableLongStateOf(0L) }
-    var showPlayButton by remember { mutableStateOf(false) }
-
     val configuration = LocalConfiguration.current
     val screenWidthPx = configuration.screenWidthDp
     val screenHeightPx = configuration.screenHeightDp
@@ -746,11 +744,6 @@ fun VideoPlayerFeed(
             if (totalDuration <= 0L) totalDuration = exoPlayer.duration.coerceAtLeast(0L)
             kotlinx.coroutines.delay(200)
         }
-    }
-
-    // Auto-hide play button after 1.5s when playing
-    LaunchedEffect(showPlayButton, isPlaying) {
-        if (showPlayButton && isPlaying) { kotlinx.coroutines.delay(1500); showPlayButton = false }
     }
 
     LaunchedEffect(isAutoPlay) {
@@ -810,42 +803,26 @@ fun VideoPlayerFeed(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null
                     ) {
-                        if (isPlaying) {
-                            // Toggle play/pause on tap, auto-hide the button
-                            if (exoPlayer.isPlaying) { exoPlayer.pause() } else { exoPlayer.play() }
-                            showPlayButton = true
-                        } else {
-                            onClick()
-                        }
+                        // Always open the video detail overlay on tap
+                        onClick()
                     }
             )
 
-            // Center play/pause button — auto-hides when playing
-            AnimatedVisibility(
-                visible = showPlayButton || !isPlaying,
-                enter = fadeIn(),
-                exit = fadeOut(),
-                modifier = Modifier.align(Alignment.Center)
+            // Small mute button in top-end corner while playing
+            IconButton(
+                onClick = { onMuteChanged(!isMuted) },
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(8.dp)
+                    .size(32.dp)
+                    .background(Color.Black.copy(alpha = 0.4f), CircleShape)
             ) {
-                Box(
-                    modifier = Modifier
-                        .size(52.dp)
-                        .clip(CircleShape)
-                        .background(Color.Black.copy(alpha = 0.4f))
-                        .clickable {
-                            if (exoPlayer.isPlaying) { exoPlayer.pause() }
-                            else { exoPlayer.play() }
-                            showPlayButton = true
-                        },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        if (exoPlayer.isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                        contentDescription = null,
-                        tint = Color.White,
-                        modifier = Modifier.size(28.dp)
-                    )
-                }
+                Icon(
+                    if (isMuted) Icons.Filled.VolumeOff else Icons.Filled.VolumeUp,
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(18.dp)
+                )
             }
         }
 
