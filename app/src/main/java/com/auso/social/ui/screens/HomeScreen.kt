@@ -67,7 +67,8 @@ fun HomeScreen(
     isGlobalMuted: Boolean = false,
     onMuteChanged: (Boolean) -> Unit = {},
     topBarHeightDp: androidx.compose.ui.unit.Dp = 112.dp,
-    isTopBarVisible: Boolean = true
+    isTopBarVisible: Boolean = true,
+    onVideoOverlayChanged: (Boolean) -> Unit = {}
 ) {
     var posts by remember { mutableStateOf<List<PostResponse>>(emptyList()) }
     var isLoading by remember { mutableStateOf(false) }
@@ -158,19 +159,9 @@ fun HomeScreen(
         isLoading = false
     }
 
-    // Video detail overlay — shown on top of everything
-    if (videoDetailPost != null) {
-        VideoDetailOverlay(
-            postResponse = videoDetailPost!!,
-            isMuted = isGlobalMuted,
-            onMuteChanged = onMuteChanged,
-            onBack = { videoDetailPost = null },
-            onAuthorClick = onAuthorClick
-        )
-        return
-    }
-
+    // Video detail overlay — drawn on top of feed content (not replacing it)
     Box(modifier = Modifier.fillMaxSize()) {
+        // Main feed content
         if (isLoading) {
             Column(
                 modifier = Modifier
@@ -270,6 +261,18 @@ fun HomeScreen(
                     )
                 }
             }
+        }
+
+        // Video detail overlay — on top of everything, so main content stays behind
+        if (videoDetailPost != null) {
+            LaunchedEffect(Unit) { onVideoOverlayChanged(true) }
+            VideoDetailOverlay(
+                postResponse = videoDetailPost!!,
+                isMuted = isGlobalMuted,
+                onMuteChanged = onMuteChanged,
+                onBack = { videoDetailPost = null; onVideoOverlayChanged(false) },
+                onAuthorClick = onAuthorClick
+            )
         }
     }
 }
@@ -696,6 +699,7 @@ fun VideoPlayerFeed(
     var isPlaying by remember { mutableStateOf(false) }
     var currentPosition by remember { mutableLongStateOf(0L) }
     var totalDuration by remember { mutableLongStateOf(0L) }
+    var showPlayButton by remember { mutableStateOf(false) }
 
     val configuration = LocalConfiguration.current
     val screenWidthPx = configuration.screenWidthDp
@@ -742,6 +746,11 @@ fun VideoPlayerFeed(
             if (totalDuration <= 0L) totalDuration = exoPlayer.duration.coerceAtLeast(0L)
             kotlinx.coroutines.delay(200)
         }
+    }
+
+    // Auto-hide play button after 1.5s when playing
+    LaunchedEffect(showPlayButton, isPlaying) {
+        if (showPlayButton && isPlaying) { kotlinx.coroutines.delay(1500); showPlayButton = false }
     }
 
     LaunchedEffect(isAutoPlay) {
@@ -800,28 +809,43 @@ fun VideoPlayerFeed(
                     .clickable(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null
-                    ) { onClick() }
+                    ) {
+                        if (isPlaying) {
+                            // Toggle play/pause on tap, auto-hide the button
+                            if (exoPlayer.isPlaying) { exoPlayer.pause() } else { exoPlayer.play() }
+                            showPlayButton = true
+                        } else {
+                            onClick()
+                        }
+                    }
             )
 
-            // Center play/pause button — toggle play/pause
-            Box(
-                modifier = Modifier
-                    .align(Alignment.Center)
-                    .size(52.dp)
-                    .clip(CircleShape)
-                    .background(Color.Black.copy(alpha = 0.4f))
-                    .clickable {
-                        if (exoPlayer.isPlaying) { exoPlayer.pause() }
-                        else { exoPlayer.play() }
-                    },
-                contentAlignment = Alignment.Center
+            // Center play/pause button — auto-hides when playing
+            AnimatedVisibility(
+                visible = showPlayButton || !isPlaying,
+                enter = fadeIn(),
+                exit = fadeOut(),
+                modifier = Modifier.align(Alignment.Center)
             ) {
-                Icon(
-                    if (exoPlayer.isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                    contentDescription = null,
-                    tint = Color.White,
-                    modifier = Modifier.size(28.dp)
-                )
+                Box(
+                    modifier = Modifier
+                        .size(52.dp)
+                        .clip(CircleShape)
+                        .background(Color.Black.copy(alpha = 0.4f))
+                        .clickable {
+                            if (exoPlayer.isPlaying) { exoPlayer.pause() }
+                            else { exoPlayer.play() }
+                            showPlayButton = true
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        if (exoPlayer.isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(28.dp)
+                    )
+                }
             }
         }
 
@@ -842,9 +866,10 @@ fun VideoPlayerFeed(
 }
 
 /**
- * Full-screen video detail overlay (YouTube-style)
- * Video at top, controls/details/likes in middle, comments at bottom
- * Supports: system back button, swipe down to dismiss, vertical videos
+ * Full-screen video detail overlay
+ * - Horizontal videos: YouTube-style (video top, details below)
+ * - Vertical videos: TikTok-style (video full, action buttons right, info bottom-left)
+ * Supports: system back button, swipe down to dismiss
  */
 @Composable
 fun VideoDetailOverlay(
@@ -878,15 +903,7 @@ fun VideoDetailOverlay(
     } else {
         16f / 9f
     }
-    // For vertical videos, cap the height to 70% of screen
-    val configuration = LocalConfiguration.current
-    val screenHeightDp = configuration.screenHeightDp
     val isVerticalVideo = videoAspectRatio < 1f
-    val videoBoxHeightDp = if (isVerticalVideo) {
-        (screenHeightDp * 0.70f).roundToInt()
-    } else {
-        -1 // use aspectRatio instead
-    }
 
     val exoPlayer = remember {
         androidx.media3.exoplayer.ExoPlayer.Builder(context).build().apply {
@@ -903,7 +920,6 @@ fun VideoDetailOverlay(
         val listener = object : androidx.media3.common.Player.Listener {
             override fun onPlaybackStateChanged(playbackState: Int) {
                 if (playbackState == androidx.media3.common.Player.STATE_READY) totalDuration = exoPlayer.duration.coerceAtLeast(0L)
-                // Loop handled by repeatMode
             }
             override fun onIsPlayingChanged(playing: Boolean) { isPlaying = playing; if (playing) totalDuration = exoPlayer.duration.coerceAtLeast(0L) }
         }
@@ -925,40 +941,30 @@ fun VideoDetailOverlay(
 
     LaunchedEffect(isMuted) { exoPlayer.volume = if (isMuted) 0f else 1f }
 
-    // Full screen overlay — respects system bars so nothing goes under them
-    Column(
+    // Full screen overlay — respects system bars
+    Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
+            .background(Color.Black)
             .statusBarsPadding()
             .navigationBarsPadding()
             .graphicsLayer { translationY = offsetY }
-            // Swipe down to dismiss gesture
             .pointerInput(Unit) {
                 detectVerticalDragGestures(
                     onVerticalDrag = { _, dragAmount ->
-                        // Only allow dragging down (positive offset)
                         offsetY = (offsetY + dragAmount).coerceAtLeast(0f)
                     },
                     onDragEnd = {
-                        if (offsetY > dismissThreshold) {
-                            onBack()
-                        }
+                        if (offsetY > dismissThreshold) onBack()
                         offsetY = 0f
                     },
-                    onDragCancel = {
-                        offsetY = 0f
-                    }
+                    onDragCancel = { offsetY = 0f }
                 )
             }
     ) {
-        // Video area — respects video orientation
-        val videoBoxModifier = if (isVerticalVideo) {
-            Modifier.fillMaxWidth().height(videoBoxHeightDp.dp)
-        } else {
-            Modifier.fillMaxWidth().aspectRatio(videoAspectRatio)
-        }
-        Box(modifier = videoBoxModifier.background(Color.Black)) {
+        if (isVerticalVideo) {
+            // ═══════════ TIKTOK LAYOUT for vertical videos ═══════════
+            // Video fills the whole area
             AndroidView(
                 factory = { ctx ->
                     androidx.media3.ui.PlayerView(ctx).apply {
@@ -975,135 +981,248 @@ fun VideoDetailOverlay(
             // Tap to toggle controls
             Box(modifier = Modifier.fillMaxSize().clickable { showControls = !showControls })
 
-            // Back button always visible top-start
-            IconButton(
-                onClick = onBack,
-                modifier = Modifier.align(Alignment.TopStart).padding(8.dp).size(36.dp).background(Color.Black.copy(alpha = 0.4f), CircleShape)
+            // Back button top-start
+            if (showControls) {
+                IconButton(
+                    onClick = onBack,
+                    modifier = Modifier.align(Alignment.TopStart).padding(8.dp).size(36.dp).background(Color.Black.copy(alpha = 0.4f), CircleShape)
+                ) {
+                    Icon(Icons.Filled.ArrowBack, contentDescription = "Volver", tint = Color.White, modifier = Modifier.size(22.dp))
+                }
+            }
+
+            // Right side action buttons (TikTok-style)
+            Column(
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(end = 12.dp, bottom = 100.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(20.dp)
             ) {
-                Icon(Icons.Filled.ArrowBack, contentDescription = "Volver", tint = Color.White, modifier = Modifier.size(22.dp))
-            }
-
-            // Controls overlay — play/pause + seekbar + mute at bottom edge
-            androidx.compose.animation.AnimatedVisibility(visible = showControls, enter = fadeIn(), exit = fadeOut(), modifier = Modifier.align(Alignment.BottomCenter)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth().background(Color.Black.copy(alpha = 0.5f)).padding(horizontal = 8.dp, vertical = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                // Avatar
+                Box(
+                    modifier = Modifier.size(44.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary)
+                        .clickable { onAuthorClick(postResponse.authorUsername) },
+                    contentAlignment = Alignment.Center
                 ) {
-                    // Play/Pause
-                    IconButton(onClick = {
-                        if (exoPlayer.isPlaying) { exoPlayer.pause() }
-                        else { exoPlayer.play() }
-                    }, modifier = Modifier.size(28.dp)) {
-                        Icon(if (exoPlayer.isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
-                    }
-                    // Seekbar
-                    val progress = if (totalDuration > 0) (currentPosition.toFloat() / totalDuration.toFloat()).coerceIn(0f, 1f) else 0f
-                    Slider(
-                        value = progress,
-                        onValueChange = { fraction -> val seekPosition = (fraction * totalDuration).toLong(); exoPlayer.seekTo(seekPosition); currentPosition = seekPosition },
-                        colors = SliderDefaults.colors(thumbColor = Color.White, activeTrackColor = Color.White, inactiveTrackColor = Color.White.copy(alpha = 0.3f)),
-                        modifier = Modifier.weight(1f)
-                    )
-                    // Mute
-                    IconButton(onClick = { onMuteChanged(!isMuted) }, modifier = Modifier.size(28.dp)) {
-                        Icon(if (isMuted) Icons.Filled.VolumeOff else Icons.Filled.VolumeUp, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
+                    if (!postResponse.authorProfilePhoto.isNullOrBlank()) {
+                        AsyncImage(model = AusoApiClient.fullUrl(postResponse.authorProfilePhoto), contentDescription = "Avatar", modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                    } else {
+                        Text(text = postResponse.authorDisplayName.take(1).uppercase(), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
                     }
                 }
-            }
-        }
-
-        // Scrollable content below video: details + likes + comments
-        LazyColumn(modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
-            // Author row
-            item {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp)
-                ) {
-                    Box(
-                        modifier = Modifier.size(40.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary)
-                            .clickable { onAuthorClick(postResponse.authorUsername) },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        if (!postResponse.authorProfilePhoto.isNullOrBlank()) {
-                            AsyncImage(model = AusoApiClient.fullUrl(postResponse.authorProfilePhoto), contentDescription = "Avatar", modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-                        } else {
-                            Text(text = postResponse.authorDisplayName.take(1).uppercase(), color = MaterialTheme.colorScheme.onPrimary, fontWeight = FontWeight.Bold)
-                        }
-                    }
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(text = postResponse.authorDisplayName, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.titleMedium)
-                        Text(text = "@${postResponse.authorUsername}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    Button(onClick = { /* TODO: Follow */ }, contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp)) {
-                        Text("Seguir", fontSize = 13.sp)
-                    }
+                // Like
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Icon(if (postResponse.isLiked) Icons.Default.Favorite else Icons.Default.FavoriteBorder, contentDescription = null, tint = if (postResponse.isLiked) Color(0xFFFF2D55) else Color.White, modifier = Modifier.size(28.dp))
+                    Text("${postResponse.likesCount}", color = Color.White, style = MaterialTheme.typography.labelSmall)
                 }
-            }
-
-            // Post content
-            if (post.content.isNotBlank()) {
-                item {
-                    Text(text = post.content, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(bottom = 8.dp))
+                // Comment
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Icon(Icons.Default.ChatBubbleOutline, contentDescription = null, tint = Color.White, modifier = Modifier.size(28.dp))
+                    Text("${postResponse.commentsCount}", color = Color.White, style = MaterialTheme.typography.labelSmall)
                 }
-            }
-
-            // Actions row
-            item {
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(0.dp)
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(if (postResponse.isLiked) Icons.Default.Favorite else Icons.Default.FavoriteBorder, contentDescription = null, tint = if (postResponse.isLiked) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(22.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("${postResponse.likesCount}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    Spacer(modifier = Modifier.width(24.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.ChatBubbleOutline, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(22.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("${postResponse.commentsCount}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    Spacer(modifier = Modifier.width(24.dp))
+                // Share
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     IconButton(onClick = {
                         val shareIntent = Intent().apply { action = Intent.ACTION_SEND; putExtra(Intent.EXTRA_TEXT, "Publicado por @${postResponse.authorUsername} en AUSO\n\n${post.content}"); type = "text/plain" }
                         context.startActivity(Intent.createChooser(shareIntent, "Compartir via"))
-                    }, modifier = Modifier.size(36.dp)) {
-                        Icon(Icons.Default.Share, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(22.dp))
+                    }, modifier = Modifier.size(28.dp)) {
+                        Icon(Icons.Default.Share, contentDescription = null, tint = Color.White, modifier = Modifier.size(28.dp))
                     }
-                    Spacer(modifier = Modifier.weight(1f))
-                    IconButton(onClick = { isSaved = !isSaved }, modifier = Modifier.size(36.dp)) {
-                        Icon(if (isSaved) Icons.Default.Bookmark else Icons.Default.BookmarkBorder, contentDescription = null, tint = if (isSaved) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(22.dp))
-                    }
+                    Text("Compartir", color = Color.White, style = MaterialTheme.typography.labelSmall)
                 }
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
+                // Bookmark
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    IconButton(onClick = { isSaved = !isSaved }, modifier = Modifier.size(28.dp)) {
+                        Icon(if (isSaved) Icons.Default.Bookmark else Icons.Default.BookmarkBorder, contentDescription = null, tint = if (isSaved) Color.White else Color.White, modifier = Modifier.size(28.dp))
+                    }
+                    Text("Guardar", color = Color.White, style = MaterialTheme.typography.labelSmall)
+                }
+                // Mute
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    IconButton(onClick = { onMuteChanged(!isMuted) }, modifier = Modifier.size(28.dp)) {
+                        Icon(if (isMuted) Icons.Filled.VolumeOff else Icons.Filled.VolumeUp, contentDescription = null, tint = Color.White, modifier = Modifier.size(28.dp))
+                    }
+                    Text(if (isMuted) "Silencio" else "Sonido", color = Color.White, style = MaterialTheme.typography.labelSmall)
+                }
             }
 
-            // Comments placeholder
-            item {
-                Column(modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp)) {
-                    Text("Comentarios", fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.titleMedium)
-                    Spacer(modifier = Modifier.height(16.dp))
-                    // Comment input
-                    var commentText by remember { mutableStateOf("") }
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                        OutlinedTextField(
-                            value = commentText,
-                            onValueChange = { commentText = it },
-                            placeholder = { Text("Escribe un comentario...") },
-                            modifier = Modifier.weight(1f),
-                            maxLines = 3,
-                            shape = RoundedCornerShape(20.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        IconButton(onClick = { /* TODO: Post comment */ commentText = "" }, modifier = Modifier.size(40.dp).background(MaterialTheme.colorScheme.primary, CircleShape)) {
-                            Icon(Icons.Filled.Send, contentDescription = "Enviar", tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(20.dp))
+            // Bottom-left: author info + description (TikTok-style)
+            Column(
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(start = 12.dp, bottom = 100.dp)
+                    .fillMaxWidth(0.7f)
+            ) {
+                Text(text = "@${postResponse.authorUsername}", color = Color.White, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleSmall)
+                Spacer(modifier = Modifier.height(4.dp))
+                if (post.content.isNotBlank()) {
+                    Text(text = post.content, color = Color.White.copy(alpha = 0.9f), style = MaterialTheme.typography.bodySmall, maxLines = 3, overflow = TextOverflow.Ellipsis)
+                }
+            }
+
+            // Progress bar at very bottom
+            val progress = if (totalDuration > 0) (currentPosition.toFloat() / totalDuration.toFloat()).coerceIn(0f, 1f) else 0f
+            LinearProgressIndicator(
+                progress = { progress },
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .height(2.dp)
+                    .padding(bottom = 88.dp),
+                color = Color.White,
+                trackColor = Color.White.copy(alpha = 0.3f),
+            )
+
+        } else {
+            // ═══════════ YOUTUBE LAYOUT for horizontal videos ═══════════
+            Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+                // Video area with correct aspect ratio
+                Box(modifier = Modifier.fillMaxWidth().aspectRatio(videoAspectRatio).background(Color.Black)) {
+                    AndroidView(
+                        factory = { ctx ->
+                            androidx.media3.ui.PlayerView(ctx).apply {
+                                player = exoPlayer
+                                useController = false
+                                resizeMode = androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT
+                                setShowBuffering(androidx.media3.ui.PlayerView.SHOW_BUFFERING_WHEN_PLAYING)
+                            }
+                        },
+                        update = { it.player = exoPlayer },
+                        modifier = Modifier.fillMaxSize()
+                    )
+
+                    // Tap to toggle controls
+                    Box(modifier = Modifier.fillMaxSize().clickable { showControls = !showControls })
+
+                    // Back button top-start
+                    if (showControls) {
+                        IconButton(
+                            onClick = onBack,
+                            modifier = Modifier.align(Alignment.TopStart).padding(8.dp).size(36.dp).background(Color.Black.copy(alpha = 0.4f), CircleShape)
+                        ) {
+                            Icon(Icons.Filled.ArrowBack, contentDescription = "Volver", tint = Color.White, modifier = Modifier.size(22.dp))
                         }
                     }
-                    Spacer(modifier = Modifier.height(24.dp))
-                    Text("No hay comentarios aun", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.fillMaxWidth().padding(vertical = 24.dp).wrapContentWidth(Alignment.CenterHorizontally))
+
+                    // Controls: play/pause + seekbar + mute
+                    androidx.compose.animation.AnimatedVisibility(visible = showControls, enter = fadeIn(), exit = fadeOut(), modifier = Modifier.align(Alignment.BottomCenter)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().background(Color.Black.copy(alpha = 0.5f)).padding(horizontal = 8.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            IconButton(onClick = {
+                                if (exoPlayer.isPlaying) { exoPlayer.pause() } else { exoPlayer.play() }
+                            }, modifier = Modifier.size(28.dp)) {
+                                Icon(if (exoPlayer.isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
+                            }
+                            val progress = if (totalDuration > 0) (currentPosition.toFloat() / totalDuration.toFloat()).coerceIn(0f, 1f) else 0f
+                            Slider(
+                                value = progress,
+                                onValueChange = { fraction -> val seekPosition = (fraction * totalDuration).toLong(); exoPlayer.seekTo(seekPosition); currentPosition = seekPosition },
+                                colors = SliderDefaults.colors(thumbColor = Color.White, activeTrackColor = Color.White, inactiveTrackColor = Color.White.copy(alpha = 0.3f)),
+                                modifier = Modifier.weight(1f)
+                            )
+                            IconButton(onClick = { onMuteChanged(!isMuted) }, modifier = Modifier.size(28.dp)) {
+                                Icon(if (isMuted) Icons.Filled.VolumeOff else Icons.Filled.VolumeUp, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
+                            }
+                        }
+                    }
+                }
+
+                // Scrollable content below video: details + likes + comments
+                LazyColumn(modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
+                    // Author row
+                    item {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier.size(40.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary)
+                                    .clickable { onAuthorClick(postResponse.authorUsername) },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                if (!postResponse.authorProfilePhoto.isNullOrBlank()) {
+                                    AsyncImage(model = AusoApiClient.fullUrl(postResponse.authorProfilePhoto), contentDescription = "Avatar", modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                                } else {
+                                    Text(text = postResponse.authorDisplayName.take(1).uppercase(), color = MaterialTheme.colorScheme.onPrimary, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(text = postResponse.authorDisplayName, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.titleMedium)
+                                Text(text = "@${postResponse.authorUsername}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            Button(onClick = { /* TODO: Follow */ }, contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp)) {
+                                Text("Seguir", fontSize = 13.sp)
+                            }
+                        }
+                    }
+
+                    // Post content
+                    if (post.content.isNotBlank()) {
+                        item {
+                            Text(text = post.content, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(bottom = 8.dp))
+                        }
+                    }
+
+                    // Actions row
+                    item {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                            horizontalArrangement = Arrangement.spacedBy(0.dp)
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(if (postResponse.isLiked) Icons.Default.Favorite else Icons.Default.FavoriteBorder, contentDescription = null, tint = if (postResponse.isLiked) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(22.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("${postResponse.likesCount}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            Spacer(modifier = Modifier.width(24.dp))
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.ChatBubbleOutline, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(22.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("${postResponse.commentsCount}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            Spacer(modifier = Modifier.width(24.dp))
+                            IconButton(onClick = {
+                                val shareIntent = Intent().apply { action = Intent.ACTION_SEND; putExtra(Intent.EXTRA_TEXT, "Publicado por @${postResponse.authorUsername} en AUSO\n\n${post.content}"); type = "text/plain" }
+                                context.startActivity(Intent.createChooser(shareIntent, "Compartir via"))
+                            }, modifier = Modifier.size(36.dp)) {
+                                Icon(Icons.Default.Share, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(22.dp))
+                            }
+                            Spacer(modifier = Modifier.weight(1f))
+                            IconButton(onClick = { isSaved = !isSaved }, modifier = Modifier.size(36.dp)) {
+                                Icon(if (isSaved) Icons.Default.Bookmark else Icons.Default.BookmarkBorder, contentDescription = null, tint = if (isSaved) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(22.dp))
+                            }
+                        }
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
+                    }
+
+                    // Comments placeholder
+                    item {
+                        Column(modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp)) {
+                            Text("Comentarios", fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.titleMedium)
+                            Spacer(modifier = Modifier.height(16.dp))
+                            var commentText by remember { mutableStateOf("") }
+                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                                OutlinedTextField(
+                                    value = commentText,
+                                    onValueChange = { commentText = it },
+                                    placeholder = { Text("Escribe un comentario...") },
+                                    modifier = Modifier.weight(1f),
+                                    maxLines = 3,
+                                    shape = RoundedCornerShape(20.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                IconButton(onClick = { /* TODO: Post comment */ commentText = "" }, modifier = Modifier.size(40.dp).background(MaterialTheme.colorScheme.primary, CircleShape)) {
+                                    Icon(Icons.Filled.Send, contentDescription = "Enviar", tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(20.dp))
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(24.dp))
+                            Text("No hay comentarios aun", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.fillMaxWidth().padding(vertical = 24.dp).wrapContentWidth(Alignment.CenterHorizontally))
+                        }
+                    }
                 }
             }
         }

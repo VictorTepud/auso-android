@@ -83,6 +83,9 @@ fun MainScreen(
     // Currently playing video id - only one plays at a time
     var currentlyPlayingVideoId by remember { mutableStateOf<String?>(null) }
 
+    // Track if video overlay is open (to hide top bar)
+    var isVideoOverlayOpen by remember { mutableStateOf(false) }
+
     // Bottom nav
     val bottomNavItems = listOf(
         BottomNavItem(Routes.HOME, "Inicio", Icons.Filled.Home, Icons.Outlined.Home),
@@ -199,7 +202,10 @@ fun MainScreen(
                             isGlobalMuted = muted
                         },
                         topBarHeightDp = topBarHeightDp,
-                        isTopBarVisible = isTopBarVisible
+                        isTopBarVisible = isTopBarVisible,
+                        onVideoOverlayChanged = { isOpen ->
+                            isVideoOverlayOpen = isOpen
+                        }
                     )
                 }
                 1 -> SearchScreen()
@@ -207,9 +213,9 @@ fun MainScreen(
                 3 -> AppsScreen()
             }
 
-            // Floating top bar — overlays the content, slides in/out
+            // Floating top bar — overlays the content, slides in/out, hidden when video overlay is open
             AnimatedVisibility(
-                visible = isTopBarVisible,
+                visible = isTopBarVisible && !isVideoOverlayOpen,
                 enter = slideInVertically(initialOffsetY = { -it }),
                 exit = slideOutVertically(targetOffsetY = { -it }),
                 modifier = Modifier.align(Alignment.TopCenter)
