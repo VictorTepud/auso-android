@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -75,7 +76,7 @@ fun MagicProgressBar(
     )
 
     // Thread definitions: color, amplitude factor, frequency factor, phase offset, thickness
-    val threads = remember {
+    val threads: List<ThreadSpec> = remember {
         listOf(
             ThreadSpec(Color(0xFFFF1744), 0.9f, 3.0f, 0.0f, 1.6f),    // Vivid red
             ThreadSpec(Color(0xFFFF6D00), 0.7f, 2.5f, 1.0f, 1.4f),    // Vivid orange
