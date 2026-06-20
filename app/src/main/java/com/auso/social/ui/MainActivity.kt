@@ -12,6 +12,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -19,6 +20,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import com.auso.social.data.ThemeManager
 import com.auso.social.ui.navigation.Routes
 import com.auso.social.ui.screens.LoginScreen
 import com.auso.social.ui.screens.RegisterScreen
@@ -30,15 +32,19 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            AUSOTheme {
-                AUSOApp()
+            val context = LocalContext.current
+            val themeManager = remember { ThemeManager(context) }
+            val themeMode by themeManager.themeFlow.collectAsState(initial = ThemeManager.THEME_SYSTEM)
+
+            AUSOTheme(themeMode = themeMode) {
+                AUSOApp(themeManager = themeManager)
             }
         }
     }
 }
 
 @Composable
-fun AUSOApp() {
+fun AUSOApp(themeManager: ThemeManager) {
     val navController = rememberNavController()
     val authViewModel: AuthViewModel = viewModel()
 
@@ -136,7 +142,8 @@ fun AUSOApp() {
                     navController.navigate(Routes.LOGIN) {
                         popUpTo(Routes.MAIN) { inclusive = true }
                     }
-                }
+                },
+                themeManager = themeManager
             )
         }
     }

@@ -54,7 +54,8 @@ import kotlinx.coroutines.launch
 @Composable
 fun MainScreen(
     authViewModel: AuthViewModel,
-    onLogout: () -> Unit = {}
+    onLogout: () -> Unit = {},
+    themeManager: com.auso.social.data.ThemeManager? = null
 ) {
     val currentUser by authViewModel.currentUser.collectAsState()
     val coroutineScope = rememberCoroutineScope()
@@ -221,7 +222,7 @@ fun MainScreen(
                         showUserProfileScreen = true
                     }
                 )
-                3 -> AppsScreen()
+                3 -> AppsScreen(themeManager = themeManager)
             }
 
             // Floating top bar — overlays the content, slides in/out, hidden when video overlay is open
