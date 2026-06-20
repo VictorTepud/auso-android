@@ -26,6 +26,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import coil.compose.AsyncImage
 import com.auso.social.network.AusoApiClient
+import com.auso.social.ui.components.MagicProgressBar
 import com.auso.social.network.model.PostResponse
 import kotlinx.coroutines.launch
 
@@ -546,21 +547,20 @@ fun TikTokVideoItem(
             }
         }
 
-        // ═══════════ PROGRESS BAR ═══════════
+        // ═══════════ PROGRESS BAR — animated magical power waves ═══════════
         if (isActuallyPlaying || currentPosition > 0) {
             val progress = if (totalDuration > 0)
                 (currentPosition.toFloat() / totalDuration.toFloat()).coerceIn(0f, 1f)
             else 0f
 
-            LinearProgressIndicator(
-                progress = { progress },
+            MagicProgressBar(
+                progress = progress,
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .fillMaxWidth()
-                    .height(2.dp)
                     .padding(bottom = 56.dp),
-                color = Color.White,
-                trackColor = Color.White.copy(alpha = 0.3f),
+                trackColor = Color.White.copy(alpha = 0.2f),
+                heightDp = 3.dp,
             )
         }
     }
