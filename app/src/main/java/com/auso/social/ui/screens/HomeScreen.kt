@@ -26,6 +26,7 @@ import androidx.compose.material.icons.outlined.Block
 import androidx.compose.material.icons.outlined.Flag
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.snapshots.SnapshotStateMap
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -78,9 +79,9 @@ fun HomeScreen(
     // Video detail overlay state
     var videoDetailPost by remember { mutableStateOf<PostResponse?>(null) }
 
-    // Shared ExoPlayer: when overlay opens, the feed's player is transferred to the overlay
-    // so it's literally the same video continuing seamlessly
-    var sharedFeedPlayer by remember { mutableStateOf<androidx.media3.exoplayer.ExoPlayer?>(null) }
+    // Map of postId -> ExoPlayer: track each feed video's player by post ID
+    // so we share the CORRECT player with the overlay when a specific video is tapped
+    val videoPlayerMap = remember { mutableStateMapOf<String, androidx.media3.exoplayer.ExoPlayer>() }
 
     // Track scroll direction
     LaunchedEffect(listState) {
@@ -272,7 +273,13 @@ fun HomeScreen(
                             onVideoPlayChanged(null)
                             videoDetailPost = postResponse
                         },
-                        onVideoPlayerRef = { player -> sharedFeedPlayer = player }
+                        onVideoPlayerRef = { player ->
+                            if (player != null) {
+                                videoPlayerMap[postResponse.post.id] = player
+                            } else {
+                                videoPlayerMap.remove(postResponse.post.id)
+                            }
+                        }
                     )
                 }
             }
@@ -287,7 +294,7 @@ fun HomeScreen(
                 onMuteChanged = onMuteChanged,
                 onBack = { videoDetailPost = null; onVideoOverlayChanged(false) },
                 onAuthorClick = onAuthorClick,
-                sharedPlayer = sharedFeedPlayer
+                sharedPlayer = videoPlayerMap[videoDetailPost!!.post.id]
             )
         }
     }
