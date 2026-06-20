@@ -1088,8 +1088,9 @@ fun VideoDetailOverlay(
 
     // If a sharedPlayer is provided (from the feed), use it directly — same video, same position
     // Otherwise, create a new player (e.g. when opened from outside the feed)
+    // Key on sharedPlayer==null so the local player is recreated if sharedPlayer is removed
     val isUsingSharedPlayer = sharedPlayer != null
-    val localPlayer = remember {
+    val localPlayer = remember(sharedPlayer == null) {
         if (sharedPlayer != null) null else {
             androidx.media3.exoplayer.ExoPlayer.Builder(context).build().apply {
                 val videoUrl = AusoApiClient.fullUrl(postResponse.video?.hlsMasterPlaylistUrl) ?: ""
@@ -1101,7 +1102,7 @@ fun VideoDetailOverlay(
             }
         }
     }
-    val exoPlayer = sharedPlayer ?: localPlayer!!
+    val exoPlayer = sharedPlayer ?: localPlayer ?: return
 
     // Resume playback when overlay opens with shared player
     if (isUsingSharedPlayer) {
