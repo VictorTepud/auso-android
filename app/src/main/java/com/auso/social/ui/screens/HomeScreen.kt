@@ -781,7 +781,9 @@ fun VideoPlayerFeed(
         }
     }
 
-    LaunchedEffect(isAutoPlay) {
+    LaunchedEffect(isAutoPlay, isOverlayShowing) {
+        // Don't control playWhenReady while overlay is using this player
+        if (isOverlayShowing) return@LaunchedEffect
         if (isAutoPlay) { exoPlayer.playWhenReady = true }
         else { exoPlayer.playWhenReady = false }
     }
