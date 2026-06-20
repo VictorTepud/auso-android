@@ -123,7 +123,7 @@ fun VideosScreen(
         VerticalPager(
             state = pagerState,
             modifier = Modifier.fillMaxSize(),
-            beyondViewportPageCount = 1 // Pre-load 1 page ahead for smooth transitions
+            beyondBoundsPageCount = 1 // Pre-load 1 page ahead for smooth transitions
         ) { page ->
             val postResponse = videoPosts[page]
             val isCurrentPage = pagerState.currentPage == page
