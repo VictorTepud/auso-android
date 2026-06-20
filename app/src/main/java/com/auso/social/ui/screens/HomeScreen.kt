@@ -279,7 +279,8 @@ fun HomeScreen(
                             } else {
                                 videoPlayerMap.remove(postResponse.post.id)
                             }
-                        }
+                        },
+                        isVideoOverlayShowing = videoDetailPost?.post?.id == postResponse.post.id
                     )
                 }
             }
@@ -510,7 +511,8 @@ fun PostCard(
     isGlobalMuted: Boolean = false,
     onMuteChanged: (Boolean) -> Unit = {},
     onVideoClick: () -> Unit = {},
-    onVideoPlayerRef: (androidx.media3.exoplayer.ExoPlayer?) -> Unit = {}
+    onVideoPlayerRef: (androidx.media3.exoplayer.ExoPlayer?) -> Unit = {},
+    isVideoOverlayShowing: Boolean = false
 ) {
     val post = postResponse.post
     val context = LocalContext.current
@@ -642,7 +644,8 @@ fun PostCard(
                 isMuted = isGlobalMuted,
                 onMuteChanged = onMuteChanged,
                 onClick = onVideoClick,
-                onPlayerRef = onVideoPlayerRef
+                onPlayerRef = onVideoPlayerRef,
+                isOverlayShowing = isVideoOverlayShowing
             )
         }
 
@@ -719,7 +722,8 @@ fun VideoPlayerFeed(
     isMuted: Boolean = false,
     onMuteChanged: (Boolean) -> Unit = {},
     onClick: () -> Unit = {},
-    onPlayerRef: (androidx.media3.exoplayer.ExoPlayer?) -> Unit = {}
+    onPlayerRef: (androidx.media3.exoplayer.ExoPlayer?) -> Unit = {},
+    isOverlayShowing: Boolean = false
 ) {
     val context = LocalContext.current
     var isPlaying by remember { mutableStateOf(false) }
@@ -792,17 +796,21 @@ fun VideoPlayerFeed(
     }
 
     Box(modifier = Modifier.fillMaxWidth().height(videoHeightDp.dp)) {
-        // Video surface
+        // Video surface — detach player from feed when overlay is showing so ExoPlayer
+        // only renders on the overlay's surface (ExoPlayer can only use one surface at a time)
         AndroidView(
             factory = { ctx ->
                 androidx.media3.ui.PlayerView(ctx).apply {
-                    player = exoPlayer
+                    player = if (isOverlayShowing) null else exoPlayer
                     useController = false
                     resizeMode = androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT
                     setShowBuffering(androidx.media3.ui.PlayerView.SHOW_BUFFERING_WHEN_PLAYING)
                 }
             },
-            update = { it.player = exoPlayer },
+            update = { view ->
+                // Detach from feed surface when overlay is using this player
+                view.player = if (isOverlayShowing) null else exoPlayer
+            },
             modifier = Modifier.fillMaxSize()
         )
 
@@ -956,10 +964,9 @@ fun VideoDetailOverlay(
             // Only release the player if we created it (not shared)
             if (!isUsingSharedPlayer) {
                 exoPlayer.release()
-            } else {
-                // Shared player: pause it so the feed can resume it later
-                exoPlayer.playWhenReady = false
             }
+            // For shared player: DON'T pause — let the feed's auto-play control it.
+            // The feed's PlayerView will reconnect and continue seamlessly.
         }
     }
 
