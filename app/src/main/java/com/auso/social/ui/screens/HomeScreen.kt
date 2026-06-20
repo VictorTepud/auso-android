@@ -114,8 +114,11 @@ fun HomeScreen(
     }
 
     // Auto-play: detect which video post is most visible (closest to viewport center)
-    // Also includes videoDetailPost in snapshotFlow so that overlay open/close triggers re-evaluation
+    // Includes a 800ms debounce so videos don't start loading during fast scrolling
     LaunchedEffect(Unit) {
+        var lastDetectedId: String? = null
+        var debounceJob: kotlinx.coroutines.Job? = null
+
         snapshotFlow {
             val visibleItems = listState.layoutInfo.visibleItemsInfo
             val viewportCenter = listState.layoutInfo.viewportStartOffset +
@@ -140,6 +143,9 @@ fun HomeScreen(
             // Include overlay state so changes trigger re-evaluation
             Pair(bestVideoId, videoDetailPost)
         }.collect { (bestVideoId, overlayPost) ->
+            // Cancel previous debounce
+            debounceJob?.cancel()
+
             if (overlayPost != null) {
                 // Overlay is open — pause all feed videos
                 if (currentlyPlayingVideoId != null) {
@@ -147,8 +153,18 @@ fun HomeScreen(
                 }
                 return@collect
             }
+
             if (bestVideoId != null && bestVideoId != currentlyPlayingVideoId) {
-                onVideoPlayChanged(bestVideoId)
+                // Debounce: wait 800ms before actually starting playback
+                // This prevents loading videos during fast scrolling
+                val targetId = bestVideoId
+                debounceJob = coroutineScope.launch {
+                    kotlinx.coroutines.delay(800)
+                    // Only play if the target hasn't changed during the delay
+                    if (targetId == bestVideoId && videoDetailPost == null) {
+                        onVideoPlayChanged(targetId)
+                    }
+                }
             } else if (bestVideoId == null && currentlyPlayingVideoId != null) {
                 onVideoPlayChanged(null)
             }
@@ -550,11 +566,12 @@ fun PostCard(
     ) {
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f), thickness = 0.5.dp)
 
-        // Author row
+        // ═══════════ AUTHOR ROW: avatar + name/profession + follow + menu ═══════════
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp)
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp)
         ) {
+            // Avatar
             Box(
                 modifier = Modifier.size(40.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary)
                     .clickable { onAuthorClick(postResponse.authorUsername) },
@@ -566,11 +583,44 @@ fun PostCard(
                     Text(text = postResponse.authorDisplayName.take(1).uppercase(), color = MaterialTheme.colorScheme.onPrimary, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
                 }
             }
-            Spacer(modifier = Modifier.width(12.dp))
-            Column(modifier = Modifier.weight(1f).clickable { onAuthorClick(postResponse.authorUsername) }) {
-                Text(text = postResponse.authorDisplayName, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = onCardColor)
-                Text(text = "@${postResponse.authorUsername}", style = MaterialTheme.typography.bodySmall, color = onCardColorVariant)
+            Spacer(modifier = Modifier.width(10.dp))
+            // Name + profession/bio
+            Column(
+                modifier = Modifier.weight(1f).clickable { onAuthorClick(postResponse.authorUsername) }
+            ) {
+                Text(
+                    text = postResponse.authorDisplayName,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = onCardColor,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                val subtitle = postResponse.authorBio?.takeIf { it.isNotBlank() }
+                if (subtitle != null) {
+                    Text(
+                        text = subtitle,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = onCardColorVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
             }
+            // Follow button
+            TextButton(
+                onClick = { /* TODO: Follow API */ },
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 2.dp),
+                modifier = Modifier.height(28.dp)
+            ) {
+                Text(
+                    text = if (postResponse.isFollowingAuthor) "Siguiendo" else "Seguir",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = if (postResponse.isFollowingAuthor) onCardColorVariant else MaterialTheme.colorScheme.primary
+                )
+            }
+            // More menu
             Box {
                 IconButton(onClick = { showMoreMenu = true }, modifier = Modifier.size(32.dp)) {
                     Icon(Icons.Default.MoreVert, contentDescription = "Mas opciones", tint = onCardColorVariant, modifier = Modifier.size(20.dp))
@@ -584,7 +634,7 @@ fun PostCard(
 
         // Post content
         if (post.content.isNotBlank()) {
-            Text(text = post.content, style = MaterialTheme.typography.bodyLarge, color = onCardColor, maxLines = 10, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(horizontal = 16.dp))
+            Text(text = post.content, style = MaterialTheme.typography.bodyLarge, color = onCardColor, maxLines = 10, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(horizontal = 12.dp))
         }
 
         // Post images
@@ -649,35 +699,109 @@ fun PostCard(
             )
         }
 
-        // Actions row
+        // ═══════════ ACTIONS ROW: like, comment, repost, share, save ═══════════
         Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.SpaceBetween
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clip(RoundedCornerShape(8.dp))) {
-                IconButton(onClick = onLikeClick, modifier = Modifier.size(36.dp)) {
-                    Icon(imageVector = if (postResponse.isLiked) Icons.Default.Favorite else Icons.Default.FavoriteBorder, contentDescription = "Like", tint = if (postResponse.isLiked) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
+            // Like
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .weight(1f)
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null
+                    ) { onLikeClick() }
+                    .padding(vertical = 6.dp),
+                horizontalArrangement = Arrangement.Center
+            ) {
+                Icon(
+                    imageVector = if (postResponse.isLiked) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                    contentDescription = "Like",
+                    tint = if (postResponse.isLiked) Color(0xFFFF2D55) else onCardColorVariant,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(modifier = Modifier.width(4.dp))
+                if (postResponse.likesCount > 0) {
+                    Text(
+                        text = formatCount(postResponse.likesCount),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (postResponse.isLiked) Color(0xFFFF2D55) else onCardColorVariant
+                    )
                 }
-                Text(text = postResponse.likesCount.toString(), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clip(RoundedCornerShape(8.dp))) {
-                IconButton(onClick = onCommentClick, modifier = Modifier.size(36.dp)) {
-                    Icon(Icons.Default.ChatBubbleOutline, contentDescription = "Comentar", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
+            // Comment
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .weight(1f)
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null
+                    ) { onCommentClick() }
+                    .padding(vertical = 6.dp),
+                horizontalArrangement = Arrangement.Center
+            ) {
+                Icon(Icons.Default.ChatBubbleOutline, contentDescription = "Comentar", tint = onCardColorVariant, modifier = Modifier.size(20.dp))
+                Spacer(modifier = Modifier.width(4.dp))
+                if (postResponse.commentsCount > 0) {
+                    Text(text = formatCount(postResponse.commentsCount), style = MaterialTheme.typography.labelSmall, color = onCardColorVariant)
                 }
-                Text(text = postResponse.commentsCount.toString(), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clip(RoundedCornerShape(8.dp))) {
-                IconButton(onClick = {
-                    val shareIntent = Intent().apply { action = Intent.ACTION_SEND; putExtra(Intent.EXTRA_TEXT, "Publicado por @${postResponse.authorUsername} en AUSO\n\n${post.content}"); type = "text/plain" }
-                    context.startActivity(Intent.createChooser(shareIntent, "Compartir via"))
-                }, modifier = Modifier.size(36.dp)) {
-                    Icon(Icons.Default.Share, contentDescription = "Compartir", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
-                }
+            // Repost
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .weight(1f)
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null
+                    ) { /* TODO: Repost API */ }
+                    .padding(vertical = 6.dp),
+                horizontalArrangement = Arrangement.Center
+            ) {
+                Icon(Icons.Default.Repeat, contentDescription = "Repostear", tint = onCardColorVariant, modifier = Modifier.size(20.dp))
             }
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clip(RoundedCornerShape(8.dp))) {
-                IconButton(onClick = { isSaved = !isSaved }, modifier = Modifier.size(36.dp)) {
-                    Icon(imageVector = if (isSaved) Icons.Default.Bookmark else Icons.Default.BookmarkBorder, contentDescription = "Guardar", tint = if (isSaved) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
-                }
+            // Share
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .weight(1f)
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null
+                    ) {
+                        val shareIntent = Intent().apply {
+                            action = Intent.ACTION_SEND
+                            putExtra(Intent.EXTRA_TEXT, "Publicado por @${postResponse.authorUsername} en AUSO\n\n${post.content}")
+                            type = "text/plain"
+                        }
+                        context.startActivity(Intent.createChooser(shareIntent, "Compartir via"))
+                    }
+                    .padding(vertical = 6.dp),
+                horizontalArrangement = Arrangement.Center
+            ) {
+                Icon(Icons.Default.Share, contentDescription = "Compartir", tint = onCardColorVariant, modifier = Modifier.size(20.dp))
+            }
+            // Bookmark
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .weight(1f)
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null
+                    ) { isSaved = !isSaved }
+                    .padding(vertical = 6.dp),
+                horizontalArrangement = Arrangement.Center
+            ) {
+                Icon(
+                    imageVector = if (isSaved) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
+                    contentDescription = "Guardar",
+                    tint = if (isSaved) MaterialTheme.colorScheme.primary else onCardColorVariant,
+                    modifier = Modifier.size(20.dp)
+                )
             }
         }
 
@@ -705,8 +829,21 @@ fun PostCard(
 }
 
 /**
- * Minimal video player for the feed — thumbnail + play/pause center + progress bar at bottom
- * Tap video = open full-screen detail overlay; play/pause button in center; auto-loop
+ * Format large counts: 1.2K, 3.5M, etc.
+ */
+private fun formatCount(count: Long): String {
+    return when {
+        count >= 1_000_000 -> String.format("%.1fM", count / 1_000_000.0)
+        count >= 1_000 -> String.format("%.1fK", count / 1_000.0)
+        else -> count.toString()
+    }
+}
+
+/**
+ * Lightweight video player for the feed.
+ * - When NOT playing: shows only thumbnail + play button (NO ExoPlayer created = zero resources)
+ * - When playing: creates ExoPlayer, renders video surface, shows progress bar
+ * This prevents all videos from loading/buffering when scrolling the feed.
  */
 @Composable
 fun VideoPlayerFeed(
@@ -735,126 +872,93 @@ fun VideoPlayerFeed(
     val isVerticalVideo = videoWidth > 0 && videoHeight > 0 && videoWidth < videoHeight
     val aspectRatio = if (videoWidth > 0 && videoHeight > 0) videoWidth.toFloat() / videoHeight.toFloat() else 16f / 9f
     val calculatedHeightDp = (screenWidthPx / aspectRatio).roundToInt()
-    // For vertical videos, use more screen height (up to 80%), for horizontal keep the limit
     val videoHeightDp = if (isVerticalVideo) {
         minOf(calculatedHeightDp, (screenHeightPx * 0.80).roundToInt())
     } else {
         minOf(calculatedHeightDp, maxMediaHeightDp)
     }
 
-    val exoPlayer = remember {
-        androidx.media3.exoplayer.ExoPlayer.Builder(context).build().apply {
-            setMediaItem(androidx.media3.common.MediaItem.fromUri(videoUrl))
-            prepare()
-            playWhenReady = false
-            volume = if (isMuted) 0f else 1f
-            repeatMode = androidx.media3.common.Player.REPEAT_MODE_ALL
-        }
-    }
-
-    DisposableEffect(exoPlayer) {
-        val listener = object : androidx.media3.common.Player.Listener {
-            override fun onPlaybackStateChanged(playbackState: Int) {
-                if (playbackState == androidx.media3.common.Player.STATE_READY) totalDuration = exoPlayer.duration.coerceAtLeast(0L)
-                // Loop is handled by repeatMode — no need to handle STATE_ENDED
-            }
-            override fun onIsPlayingChanged(playing: Boolean) {
-                isPlaying = playing
-                if (playing) totalDuration = exoPlayer.duration.coerceAtLeast(0L)
-                onPlayChanged(playing)
-            }
-        }
-        exoPlayer.addListener(listener)
-        onDispose { exoPlayer.removeListener(listener) }
-    }
-
-    // Report player to parent for sharing with overlay
-    LaunchedEffect(exoPlayer) {
-        onPlayerRef(exoPlayer)
-    }
-
-    LaunchedEffect(isPlaying) {
-        while (isPlaying) {
-            currentPosition = exoPlayer.currentPosition.coerceAtLeast(0L)
-            if (totalDuration <= 0L) totalDuration = exoPlayer.duration.coerceAtLeast(0L)
-            kotlinx.coroutines.delay(200)
-        }
-    }
-
-    LaunchedEffect(isAutoPlay, isOverlayShowing) {
-        // Don't control playWhenReady while overlay is using this player
-        if (isOverlayShowing) return@LaunchedEffect
-        if (isAutoPlay) { exoPlayer.playWhenReady = true }
-        else { exoPlayer.playWhenReady = false }
-    }
-
-    LaunchedEffect(isMuted) { exoPlayer.volume = if (isMuted) 0f else 1f }
-
-    DisposableEffect(Unit) {
-        onDispose {
-            onPlayerRef(null)
-            exoPlayer.release()
-        }
-    }
-
-    Box(modifier = Modifier.fillMaxWidth().height(videoHeightDp.dp)) {
-        // Video surface — detach player from feed when overlay is showing so ExoPlayer
-        // only renders on the overlay's surface (ExoPlayer can only use one surface at a time)
-        AndroidView(
-            factory = { ctx ->
-                androidx.media3.ui.PlayerView(ctx).apply {
-                    player = if (isOverlayShowing) null else exoPlayer
-                    useController = false
-                    resizeMode = androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT
-                    setShowBuffering(androidx.media3.ui.PlayerView.SHOW_BUFFERING_WHEN_PLAYING)
-                }
-            },
-            update = { view ->
-                // Detach from feed surface when overlay is using this player
-                view.player = if (isOverlayShowing) null else exoPlayer
-            },
-            modifier = Modifier.fillMaxSize()
-        )
-
-        // Thumbnail when not playing and not auto-play
-        if (!isPlaying && !isAutoPlay) {
-            Box(modifier = Modifier.fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) {
-                if (!thumbnailUrl.isNullOrBlank()) {
-                    AsyncImage(model = thumbnailUrl, contentDescription = "Thumbnail", modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-                }
-                // Play button in center — tap to start playing
-                Box(
-                    modifier = Modifier
-                        .size(56.dp)
-                        .clip(CircleShape)
-                        .background(Color.White.copy(alpha = 0.85f))
-                        .clickable { exoPlayer.playWhenReady = true },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(Icons.Filled.PlayArrow, contentDescription = "Reproducir", tint = Color.Black, modifier = Modifier.size(32.dp))
-                }
-                if (duration > 0) {
-                    val minutes = (duration / 60).toInt(); val seconds = (duration % 60).toInt()
-                    Text(text = String.format("%d:%02d", minutes, seconds), color = Color.White, style = MaterialTheme.typography.labelSmall, modifier = Modifier.align(Alignment.BottomEnd).padding(8.dp).background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(4.dp)).padding(horizontal = 6.dp, vertical = 2.dp))
-                }
+    // ═══════════ KEY OPTIMIZATION: Only create ExoPlayer when actually playing ═══════════
+    // This prevents all visible videos from loading/buffering during scroll
+    if (isAutoPlay) {
+        // ---- ACTIVE PLAYBACK MODE: ExoPlayer is created and video renders ----
+        val exoPlayer = remember {
+            androidx.media3.exoplayer.ExoPlayer.Builder(context).build().apply {
+                setMediaItem(androidx.media3.common.MediaItem.fromUri(videoUrl))
+                prepare()
+                playWhenReady = true
+                volume = if (isMuted) 0f else 1f
+                repeatMode = androidx.media3.common.Player.REPEAT_MODE_ALL
             }
         }
 
-        // When video is playing: tap anywhere on the video = open full-screen overlay
-        if (isPlaying || isAutoPlay) {
+        DisposableEffect(exoPlayer) {
+            val listener = object : androidx.media3.common.Player.Listener {
+                override fun onPlaybackStateChanged(playbackState: Int) {
+                    if (playbackState == androidx.media3.common.Player.STATE_READY) totalDuration = exoPlayer.duration.coerceAtLeast(0L)
+                }
+                override fun onIsPlayingChanged(playing: Boolean) {
+                    isPlaying = playing
+                    if (playing) totalDuration = exoPlayer.duration.coerceAtLeast(0L)
+                    onPlayChanged(playing)
+                }
+            }
+            exoPlayer.addListener(listener)
+            onDispose { exoPlayer.removeListener(listener) }
+        }
+
+        LaunchedEffect(exoPlayer) { onPlayerRef(exoPlayer) }
+
+        LaunchedEffect(isPlaying) {
+            while (isPlaying) {
+                currentPosition = exoPlayer.currentPosition.coerceAtLeast(0L)
+                if (totalDuration <= 0L) totalDuration = exoPlayer.duration.coerceAtLeast(0L)
+                kotlinx.coroutines.delay(200)
+            }
+        }
+
+        LaunchedEffect(isOverlayShowing) {
+            if (isOverlayShowing) return@LaunchedEffect
+            exoPlayer.playWhenReady = true
+        }
+
+        LaunchedEffect(isMuted) { exoPlayer.volume = if (isMuted) 0f else 1f }
+
+        DisposableEffect(Unit) {
+            onDispose {
+                onPlayerRef(null)
+                exoPlayer.release()
+            }
+        }
+
+        Box(modifier = Modifier.fillMaxWidth().height(videoHeightDp.dp)) {
+            // Video surface
+            AndroidView(
+                factory = { ctx ->
+                    androidx.media3.ui.PlayerView(ctx).apply {
+                        player = if (isOverlayShowing) null else exoPlayer
+                        useController = false
+                        resizeMode = androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT
+                        setShowBuffering(androidx.media3.ui.PlayerView.SHOW_BUFFERING_WHEN_PLAYING)
+                    }
+                },
+                update = { view ->
+                    view.player = if (isOverlayShowing) null else exoPlayer
+                },
+                modifier = Modifier.fillMaxSize()
+            )
+
+            // Tap to open overlay
             Box(
                 modifier = Modifier
                     .fillMaxSize()
                     .clickable(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null
-                    ) {
-                        // Always open the video detail overlay on tap
-                        onClick()
-                    }
+                    ) { onClick() }
             )
 
-            // Small mute button in top-end corner while playing
+            // Mute button
             IconButton(
                 onClick = { onMuteChanged(!isMuted) },
                 modifier = Modifier
@@ -870,20 +974,73 @@ fun VideoPlayerFeed(
                     modifier = Modifier.size(18.dp)
                 )
             }
-        }
 
-        // Visual-only progress bar at the bottom edge of the video
-        if (isPlaying || isAutoPlay) {
-            val progress = if (totalDuration > 0) (currentPosition.toFloat() / totalDuration.toFloat()).coerceIn(0f, 1f) else 0f
-            LinearProgressIndicator(
-                progress = { progress },
+            // Progress bar
+            if (isPlaying) {
+                val progress = if (totalDuration > 0) (currentPosition.toFloat() / totalDuration.toFloat()).coerceIn(0f, 1f) else 0f
+                LinearProgressIndicator(
+                    progress = { progress },
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .fillMaxWidth()
+                        .height(2.dp),
+                    color = Color.White,
+                    trackColor = Color.White.copy(alpha = 0.3f),
+                )
+            }
+        }
+    } else {
+        // ---- THUMBNAIL MODE: No ExoPlayer, just thumbnail + play button ----
+        // Zero video resources consumed while scrolling
+        onPlayerRef(null)
+
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(videoHeightDp.dp)
+                .background(Color.Black),
+            contentAlignment = Alignment.Center
+        ) {
+            // Thumbnail image
+            if (!thumbnailUrl.isNullOrBlank()) {
+                AsyncImage(
+                    model = thumbnailUrl,
+                    contentDescription = "Thumbnail",
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop
+                )
+            }
+            // Play button overlay
+            Box(
                 modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .fillMaxWidth()
-                    .height(2.dp),
-                color = Color.White,
-                trackColor = Color.White.copy(alpha = 0.3f),
-            )
+                    .size(56.dp)
+                    .clip(CircleShape)
+                    .background(Color.Black.copy(alpha = 0.6f))
+                    .clickable { onClick() },
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    Icons.Filled.PlayArrow,
+                    contentDescription = "Reproducir",
+                    tint = Color.White,
+                    modifier = Modifier.size(32.dp)
+                )
+            }
+            // Duration badge
+            if (duration > 0) {
+                val minutes = (duration / 60).toInt()
+                val seconds = (duration % 60).toInt()
+                Text(
+                    text = String.format("%d:%02d", minutes, seconds),
+                    color = Color.White,
+                    style = MaterialTheme.typography.labelSmall,
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(8.dp)
+                        .background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(4.dp))
+                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                )
+            }
         }
     }
 }
