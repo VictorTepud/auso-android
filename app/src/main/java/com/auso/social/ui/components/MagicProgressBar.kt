@@ -19,25 +19,27 @@ import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import kotlin.math.PI
 import kotlin.math.sin
 
 /**
- * Animated "magical power waves" progress bar.
+ * Animated "magical power threads" progress bar.
  *
- * Design:
- * - Body: vivid multicolor gradient that flows/shifts continuously (red → orange → yellow →
- *   green → cyan → violet → magenta), creating the "magic waves" effect.
- * - Tail (left/start): fades in from transparent so it blends with the track.
- * - Tip (right/end): transitions to deep blue, like a magic wand tip.
- * - Leading-edge glow: bright blue halo at the progress frontier.
- * - Energy pulse: a bright spot that travels along the bar like a power surge.
+ * Design: multiple colored threads/strands that undulate like energy filaments
+ * flowing through the bar. Each thread has its own color, amplitude, frequency,
+ * and phase — creating an organic "magic waves" effect.
  *
- * @param progress 0f..1f — how much of the bar is filled
- * @param modifier standard modifier (fillMaxWidth + height recommended)
- * @param trackColor color of the unfilled track background
- * @param heightDp thickness of the bar (default 4.dp for visibility)
+ * - Threads: vivid colors (no yellow/green) — red, orange, magenta, purple, blue, cyan
+ * - Tip: transitions to deep blue at the leading edge
+ * - Leading-edge glow: bright blue halo at the progress frontier
+ *
+ * @param progress 0f..1f
+ * @param modifier standard modifier
+ * @param trackColor background track color
+ * @param heightDp thickness (default 4.dp)
  */
 @Composable
 fun MagicProgressBar(
@@ -50,20 +52,20 @@ fun MagicProgressBar(
 
     val infinite = rememberInfiniteTransition(label = "magic")
 
-    // Main sweep — drives the flowing gradient shift (0→1 over 3s, then restarts smoothly)
-    val sweep by infinite.animateFloat(
+    // Main time driver — continuous flow
+    val time by infinite.animateFloat(
         initialValue = 0f,
         targetValue = 1f,
         animationSpec = infiniteRepeatable(
             animation = tween(durationMillis = 3000, easing = LinearEasing),
             repeatMode = RepeatMode.Restart
         ),
-        label = "sweep"
+        label = "time"
     )
 
     // Pulse — breathing brightness
     val pulse by infinite.animateFloat(
-        initialValue = 0.7f,
+        initialValue = 0.75f,
         targetValue = 1f,
         animationSpec = infiniteRepeatable(
             animation = tween(durationMillis = 1600, easing = FastOutSlowInEasing),
@@ -72,16 +74,19 @@ fun MagicProgressBar(
         label = "pulse"
     )
 
-    // Energy dot position — travels along the bar
-    val energyPos by infinite.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 2400, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
-        ),
-        label = "energy"
-    )
+    // Thread definitions: color, amplitude factor, frequency factor, phase offset, thickness
+    val threads = remember {
+        listOf(
+            ThreadSpec(Color(0xFFFF1744), 0.9f, 3.0f, 0.0f, 1.6f),    // Vivid red
+            ThreadSpec(Color(0xFFFF6D00), 0.7f, 2.5f, 1.0f, 1.4f),    // Vivid orange
+            ThreadSpec(Color(0xFFFF1493), 0.8f, 3.5f, 2.0f, 1.3f),    // Deep pink
+            ThreadSpec(Color(0xFFD500F9), 0.6f, 2.0f, 0.5f, 1.5f),    // Vivid purple
+            ThreadSpec(Color(0xFF651FFF), 0.85f, 2.8f, 1.5f, 1.4f),   // Deep violet
+            ThreadSpec(Color(0xFF2979FF), 0.75f, 3.2f, 3.0f, 1.6f),   // Vivid blue
+            ThreadSpec(Color(0xFF00E5FF), 0.65f, 2.6f, 2.5f, 1.2f),   // Vivid cyan
+            ThreadSpec(Color(0xFF7C4DFF), 0.5f, 3.8f, 0.8f, 1.0f),    // Electric violet
+        )
+    }
 
     Canvas(
         modifier = modifier
@@ -93,68 +98,70 @@ fun MagicProgressBar(
 
         // ── Track (background) ──
         drawRect(color = trackColor, size = size)
-        if (barW < 1f) return@Canvas
+        if (barW < 2f) return@Canvas
 
-        // ── Vivid rainbow body gradient (flows right continuously) ──
-        // We draw the gradient wider than the bar and offset it by `sweep` so it appears to flow.
-        // The gradient repeats (same start/end color) for seamless wrapping.
-        val repeatCount = 3
-        val totalStops = vividColors.size * repeatCount
-        val spanW = barW * 1.5f // gradient is wider than bar for smooth flow
-        val shiftPx = sweep * spanW
+        // ── Draw undulating threads ──
+        val t = time * 2f * PI.toFloat() // convert 0..1 → 0..2π for sine
 
-        val colorStops = mutableListOf<Pair<Float, Color>>()
-        for (r in 0 until repeatCount) {
-            vividColors.forEachIndexed { i, c ->
-                val baseFraction = (r * vividColors.size + i).toFloat() / (totalStops - 1)
-                colorStops.add(baseFraction to c)
+        threads.forEach { thread ->
+            val amp = thread.amplitude * barH * 0.35f // max vertical displacement
+            val freq = thread.frequency
+            val phase = thread.phaseOffset
+            val strokeWidth = thread.thickness
+
+            // Draw the thread as a series of short line segments forming a sine wave
+            var prevX = 0f
+            var prevY = barH / 2f + amp * sin(freq * (prevX / barW) * 2f * PI.toFloat() + t + phase)
+
+            val step = 2f // px per segment — smooth enough for a thin bar
+            var x = step
+            while (x <= barW) {
+                val y = barH / 2f + amp * sin(freq * (x / barW) * 2f * PI.toFloat() + t + phase)
+
+                drawLine(
+                    color = thread.color.copy(alpha = pulse * 0.9f),
+                    start = Offset(prevX, prevY),
+                    end = Offset(x, y),
+                    strokeWidth = strokeWidth,
+                    // Cap.ROUND would be ideal but isn't available in drawLine directly
+                )
+
+                prevX = x
+                prevY = y
+                x += step
             }
         }
 
-        val bodyBrush = Brush.horizontalGradient(
-            colorStops = colorStops.toTypedArray(),
-            startX = -shiftPx,
-            endX = spanW * repeatCount / vividColors.size * vividColors.size - shiftPx
+        // ── Bright overlay pulse — white energy wave traveling along ──
+        val waveX = time * barW
+        val waveRadius = barW * 0.15f
+        val waveBrush = Brush.horizontalGradient(
+            colors = listOf(
+                Color.Transparent,
+                Color.White.copy(alpha = 0.0f),
+                Color.White.copy(alpha = 0.4f * pulse),
+                Color.White.copy(alpha = 0.0f),
+                Color.Transparent,
+            ),
+            startX = waveX - waveRadius,
+            endX = waveX + waveRadius
         )
-
-        // Clip the body to the bar area
         drawRect(
-            brush = bodyBrush,
+            brush = waveBrush,
             topLeft = Offset.Zero,
             size = Size(barW, barH)
         )
 
-        // ── Fade-in at the tail (left edge) so it doesn't start abruptly ──
-        val fadeInBrush = Brush.horizontalGradient(
-            colors = listOf(
-                Color.Transparent,
-                Color.Transparent,
-                Color.White.copy(alpha = 0f) // just to blend
-            ),
-            startX = 0f,
-            endX = barW * 0.08f
-        )
-        drawRect(
-            brush = Brush.horizontalGradient(
-                colors = listOf(Color.Black, Color.Transparent),
-                startX = 0f,
-                endX = barW * 0.06f
-            ),
-            topLeft = Offset.Zero,
-            size = Size(barW * 0.06f, barH),
-            blendMode = BlendMode.DstIn
-        )
-
-        // ── Blue tip zone — last 15% of the bar transitions to blue ──
+        // ── Blue tip zone — last 18% transitions to deep blue ──
         val tipStart = barW * 0.82f
-        if (barW > 20f) { // only if bar is wide enough to see it
+        if (barW > 30f) {
             val tipBrush = Brush.horizontalGradient(
                 colors = listOf(
-                    Color.Transparent,          // body shows through
-                    Color.Transparent,          // body shows through
-                    Color(0xFF1565C0).copy(alpha = 0.5f * pulse),  // mid blue
-                    Color(0xFF0D47A1).copy(alpha = 0.8f * pulse),  // deep blue
-                    Color(0xFF0D47A1),          // solid deep blue at tip
+                    Color.Transparent,
+                    Color.Transparent,
+                    Color(0xFF1565C0).copy(alpha = 0.6f * pulse),
+                    Color(0xFF0D47A1).copy(alpha = 0.85f * pulse),
+                    Color(0xFF0D47A1),
                 ),
                 startX = tipStart,
                 endX = barW
@@ -166,45 +173,25 @@ fun MagicProgressBar(
             )
         }
 
-        // ── Energy pulse — bright traveling spot ──
-        val spotX = energyPos * barW
-        val spotRadius = barW * 0.12f
-        val spotBrush = Brush.horizontalGradient(
-            colors = listOf(
-                Color.Transparent,
-                Color.White.copy(alpha = 0.6f * pulse),
-                Color.White.copy(alpha = 0.8f * pulse),
-                Color.White.copy(alpha = 0.6f * pulse),
-                Color.Transparent,
-            ),
-            startX = spotX - spotRadius,
-            endX = spotX + spotRadius
-        )
-        drawRect(
-            brush = spotBrush,
-            topLeft = Offset.Zero,
-            size = Size(barW, barH)
-        )
-
-        // ── Leading-edge glow — bright blue halo at the frontier ──
+        // ── Leading-edge glow ──
         if (p > 0.005f) {
             val cx = barW
             val cy = barH / 2f
 
-            // Intense core dot
+            // Bright core
             drawCircle(
                 color = Color(0xFF42A5F5).copy(alpha = 0.95f * pulse),
-                radius = barH * 1.5f,
+                radius = barH * 1.4f,
                 center = Offset(cx, cy)
             )
 
-            // Outer glow
-            val glowR = barH * 6f
+            // Outer halo
+            val glowR = barH * 5f
             val glowBrush = Brush.radialGradient(
                 colors = listOf(
-                    Color(0xFF64B5F6).copy(alpha = 0.7f * pulse),
-                    Color(0xFF1E88E5).copy(alpha = 0.3f * pulse),
-                    Color(0xFF0D47A1).copy(alpha = 0.1f * pulse),
+                    Color(0xFF64B5F6).copy(alpha = 0.6f * pulse),
+                    Color(0xFF1E88E5).copy(alpha = 0.25f * pulse),
+                    Color(0xFF0D47A1).copy(alpha = 0.08f * pulse),
                     Color.Transparent,
                 ),
                 center = Offset(cx, cy),
@@ -219,14 +206,11 @@ fun MagicProgressBar(
     }
 }
 
-/** Vivid rainbow palette for the magic wave body — saturated, high-contrast colors. */
-private val vividColors = listOf(
-    Color(0xFFFF1744),  // Vivid red
-    Color(0xFFFF9100),  // Vivid orange
-    Color(0xFFFFEA00),  // Vivid yellow
-    Color(0xFF00E676),  // Vivid green
-    Color(0xFF00E5FF),  // Vivid cyan
-    Color(0xFF2979FF),  // Vivid blue
-    Color(0xFFD500F9),  // Vivid purple/magenta
-    Color(0xFFFF1744),  // Vivid red (wrap for seamless loop)
+/** Describes a single undulating thread in the progress bar. */
+private data class ThreadSpec(
+    val color: Color,
+    val amplitude: Float,       // 0..1 relative amplitude factor
+    val frequency: Float,       // how many wave cycles across the bar
+    val phaseOffset: Float,     // phase offset for variety
+    val thickness: Float,       // stroke width in dp
 )
