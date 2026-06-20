@@ -78,6 +78,9 @@ fun HomeScreen(
     // Video detail overlay state
     var videoDetailPost by remember { mutableStateOf<PostResponse?>(null) }
 
+    // Track feed video position for syncing with overlay
+    var feedVideoPosition by remember { mutableLongStateOf(0L) }
+
     // Track scroll direction
     LaunchedEffect(listState) {
         var prevIndex = listState.firstVisibleItemIndex
@@ -109,6 +112,7 @@ fun HomeScreen(
     }
 
     // Auto-play: detect which video post is most visible (closest to viewport center)
+    // Also includes videoDetailPost in snapshotFlow so that overlay open/close triggers re-evaluation
     LaunchedEffect(Unit) {
         snapshotFlow {
             val visibleItems = listState.layoutInfo.visibleItemsInfo
@@ -131,8 +135,16 @@ fun HomeScreen(
                     bestVideoId = post.post.id
                 }
             }
-            bestVideoId
-        }.collect { bestVideoId ->
+            // Include overlay state so changes trigger re-evaluation
+            Pair(bestVideoId, videoDetailPost)
+        }.collect { (bestVideoId, overlayPost) ->
+            if (overlayPost != null) {
+                // Overlay is open — pause all feed videos
+                if (currentlyPlayingVideoId != null) {
+                    onVideoPlayChanged(null)
+                }
+                return@collect
+            }
             if (bestVideoId != null && bestVideoId != currentlyPlayingVideoId) {
                 onVideoPlayChanged(bestVideoId)
             } else if (bestVideoId == null && currentlyPlayingVideoId != null) {
@@ -255,9 +267,11 @@ fun HomeScreen(
                         isGlobalMuted = isGlobalMuted,
                         onMuteChanged = onMuteChanged,
                         onVideoClick = {
-                            // Open video detail overlay
+                            // Open video detail overlay — pause feed immediately
+                            onVideoPlayChanged(null)
                             videoDetailPost = postResponse
-                        }
+                        },
+                        onVideoPositionUpdate = { pos -> feedVideoPosition = pos }
                     )
                 }
             }
@@ -271,7 +285,8 @@ fun HomeScreen(
                 isMuted = isGlobalMuted,
                 onMuteChanged = onMuteChanged,
                 onBack = { videoDetailPost = null; onVideoOverlayChanged(false) },
-                onAuthorClick = onAuthorClick
+                onAuthorClick = onAuthorClick,
+                seekPosition = feedVideoPosition
             )
         }
     }
@@ -486,7 +501,8 @@ fun PostCard(
     onVideoPlayRequest: (String?) -> Unit = {},
     isGlobalMuted: Boolean = false,
     onMuteChanged: (Boolean) -> Unit = {},
-    onVideoClick: () -> Unit = {}
+    onVideoClick: () -> Unit = {},
+    onVideoPositionUpdate: (Long) -> Unit = {}
 ) {
     val post = postResponse.post
     val context = LocalContext.current
@@ -617,7 +633,8 @@ fun PostCard(
                 onPlayChanged = { playing -> onVideoPlayRequest(if (playing) post.id else null) },
                 isMuted = isGlobalMuted,
                 onMuteChanged = onMuteChanged,
-                onClick = onVideoClick
+                onClick = onVideoClick,
+                onPositionUpdate = onVideoPositionUpdate
             )
         }
 
@@ -693,7 +710,8 @@ fun VideoPlayerFeed(
     onPlayChanged: (Boolean) -> Unit = {},
     isMuted: Boolean = false,
     onMuteChanged: (Boolean) -> Unit = {},
-    onClick: () -> Unit = {}
+    onClick: () -> Unit = {},
+    onPositionUpdate: (Long) -> Unit = {}
 ) {
     val context = LocalContext.current
     var isPlaying by remember { mutableStateOf(false) }
@@ -742,6 +760,7 @@ fun VideoPlayerFeed(
         while (isPlaying) {
             currentPosition = exoPlayer.currentPosition.coerceAtLeast(0L)
             if (totalDuration <= 0L) totalDuration = exoPlayer.duration.coerceAtLeast(0L)
+            onPositionUpdate(currentPosition)
             kotlinx.coroutines.delay(200)
         }
     }
@@ -854,7 +873,8 @@ fun VideoDetailOverlay(
     isMuted: Boolean = false,
     onMuteChanged: (Boolean) -> Unit = {},
     onBack: () -> Unit = {},
-    onAuthorClick: (String) -> Unit = {}
+    onAuthorClick: (String) -> Unit = {},
+    seekPosition: Long = 0L
 ) {
     val post = postResponse.post
     val context = LocalContext.current
@@ -917,6 +937,17 @@ fun VideoDetailOverlay(
     }
 
     LaunchedEffect(isMuted) { exoPlayer.volume = if (isMuted) 0f else 1f }
+
+    // Seek to the position from the feed player when overlay opens
+    LaunchedEffect(seekPosition) {
+        if (seekPosition > 0) {
+            // Wait for the player to be ready before seeking
+            while (exoPlayer.playbackState != androidx.media3.common.Player.STATE_READY) {
+                kotlinx.coroutines.delay(100)
+            }
+            exoPlayer.seekTo(seekPosition)
+        }
+    }
 
     // Full screen overlay — respects system bars
     Box(
