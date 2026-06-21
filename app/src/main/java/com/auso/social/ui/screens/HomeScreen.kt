@@ -1087,22 +1087,21 @@ fun VideoDetailOverlay(
     val isVerticalVideo = videoAspectRatio < 1f
 
     // If a sharedPlayer is provided (from the feed), use it directly — same video, same position
-    // Otherwise, create a new player (e.g. when opened from outside the feed)
+    // Otherwise, fall back to a local player.
+    // Always create a local player as fallback — prevents overlay from closing if
+    // the feed releases the shared player during recomposition.
     val isUsingSharedPlayer = sharedPlayer != null
     val localPlayer = remember {
-        if (sharedPlayer != null) null else {
-            androidx.media3.exoplayer.ExoPlayer.Builder(context).build().apply {
-                val videoUrl = AusoApiClient.fullUrl(postResponse.video?.hlsMasterPlaylistUrl) ?: ""
-                setMediaItem(androidx.media3.common.MediaItem.fromUri(videoUrl))
-                prepare()
-                playWhenReady = true
-                volume = if (isMuted) 0f else 1f
-                repeatMode = androidx.media3.common.Player.REPEAT_MODE_ALL
-            }
+        androidx.media3.exoplayer.ExoPlayer.Builder(context).build().apply {
+            val videoUrl = AusoApiClient.fullUrl(postResponse.video?.hlsMasterPlaylistUrl) ?: ""
+            setMediaItem(androidx.media3.common.MediaItem.fromUri(videoUrl))
+            prepare()
+            playWhenReady = true
+            volume = if (isMuted) 0f else 1f
+            repeatMode = androidx.media3.common.Player.REPEAT_MODE_ALL
         }
     }
     val exoPlayer = sharedPlayer ?: localPlayer
-    if (exoPlayer == null) return
 
     // Resume playback when overlay opens with shared player
     if (isUsingSharedPlayer) {
@@ -1124,6 +1123,10 @@ fun VideoDetailOverlay(
             // Only release the player if we created it (not shared)
             if (!isUsingSharedPlayer) {
                 exoPlayer.release()
+            }
+            // Always release the unused local player when using shared
+            if (isUsingSharedPlayer) {
+                localPlayer.release()
             }
             // For shared player: DON'T pause — let the feed's auto-play control it.
             // The feed's PlayerView will reconnect and continue seamlessly.
