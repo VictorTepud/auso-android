@@ -1086,36 +1086,28 @@ fun VideoDetailOverlay(
     }
     val isVerticalVideo = videoAspectRatio < 1f
 
-    // If a sharedPlayer is provided (from the feed), use it directly — same video, same position
-    // Otherwise, fall back to a local player.
-    // Always create a local player (non-null) to prevent overlay from closing,
-    // but only prepare it when there's no shared player (avoid double buffering).
-    val isUsingSharedPlayer = sharedPlayer != null
-    val localPlayer = remember {
-        // Create player but DON'T prepare yet — avoids wasting bandwidth competing with sharedPlayer
+    // The overlay ALWAYS creates its own ExoPlayer — this avoids all shared player
+    // lifecycle issues (feed releasing the player from the map, surface handoff timing, etc.)
+    // If a sharedPlayer was provided, we seek to its current position for continuity.
+    val sharedPlayerStartPosition = sharedPlayer?.currentPosition?.coerceAtLeast(0L) ?: 0L
+
+    val exoPlayer = remember {
         androidx.media3.exoplayer.ExoPlayer.Builder(context).build().apply {
+            val videoUrl = AusoApiClient.fullUrl(postResponse.video?.hlsMasterPlaylistUrl) ?: ""
+            setMediaItem(androidx.media3.common.MediaItem.fromUri(videoUrl))
+            if (sharedPlayerStartPosition > 0L) {
+                seekTo(sharedPlayerStartPosition)
+            }
+            prepare()
+            playWhenReady = true
             volume = if (isMuted) 0f else 1f
             repeatMode = androidx.media3.common.Player.REPEAT_MODE_ALL
         }
     }
 
-    // Only prepare the local player when we actually need it (no shared player available)
-    LaunchedEffect(isUsingSharedPlayer) {
-        if (!isUsingSharedPlayer) {
-            val videoUrl = AusoApiClient.fullUrl(postResponse.video?.hlsMasterPlaylistUrl) ?: ""
-            localPlayer.setMediaItem(androidx.media3.common.MediaItem.fromUri(videoUrl))
-            localPlayer.prepare()
-            localPlayer.playWhenReady = true
-        }
-    }
-
-    val exoPlayer = sharedPlayer ?: localPlayer
-
-    // Resume playback when overlay opens with shared player
-    if (isUsingSharedPlayer) {
-        LaunchedEffect(Unit) {
-            exoPlayer.playWhenReady = true
-        }
+    // Pause the shared player (feed's player) to avoid double buffering
+    if (sharedPlayer != null) {
+        LaunchedEffect(Unit) { sharedPlayer?.playWhenReady = false }
     }
 
     DisposableEffect(exoPlayer) {
@@ -1128,16 +1120,7 @@ fun VideoDetailOverlay(
         exoPlayer.addListener(listener)
         onDispose {
             exoPlayer.removeListener(listener)
-            // Only release the player if we created it (not shared)
-            if (!isUsingSharedPlayer) {
-                exoPlayer.release()
-            }
-            // Always release the unused local player when using shared
-            if (isUsingSharedPlayer) {
-                localPlayer.release()
-            }
-            // For shared player: DON'T pause — let the feed's auto-play control it.
-            // The feed's PlayerView will reconnect and continue seamlessly.
+            exoPlayer.release()
         }
     }
 
