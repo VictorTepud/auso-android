@@ -819,6 +819,80 @@ private fun PostTypeChip(
     }
 }
 
+/**
+ * Renders a video's title and description BELOW the video (not as an overlay).
+ *
+ * - Title is shown in full (single line, ellipsized).
+ * - Description is collapsed to [collapsedMaxLines] lines by default. A "Ver más" /
+ *   "Ver menos" TextButton toggles between collapsed and fully expanded.
+ *
+ * Used in the feed PostCard and in the VideoDetailOverlay scrollable area.
+ *
+ * @param title video title (optional). When null/blank, only the description is shown.
+ * @param description video description (optional). When null/blank, only the title is shown.
+ * @param collapsedMaxLines number of description lines when collapsed (default 2).
+ * @param titleColor color for the title text.
+ * @param descriptionColor color for the description text.
+ * @param accentColor color for the "Ver más / Ver menos" button text.
+ */
+@Composable
+fun VideoDetailsSection(
+    title: String?,
+    description: String?,
+    modifier: Modifier = Modifier,
+    collapsedMaxLines: Int = 2,
+    titleColor: Color = MaterialTheme.colorScheme.onSurface,
+    descriptionColor: Color = MaterialTheme.colorScheme.onSurfaceVariant,
+    accentColor: Color = MaterialTheme.colorScheme.primary
+) {
+    if (title.isNullOrBlank() && description.isNullOrBlank()) return
+
+    var expanded by remember { mutableStateOf(false) }
+
+    Column(modifier = modifier.fillMaxWidth()) {
+        if (!title.isNullOrBlank()) {
+            Text(
+                text = title,
+                color = titleColor,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 15.sp,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+        if (!description.isNullOrBlank()) {
+            if (!title.isNullOrBlank()) Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = description,
+                color = descriptionColor,
+                fontSize = 13.sp,
+                maxLines = if (expanded) Int.MAX_VALUE else collapsedMaxLines,
+                overflow = TextOverflow.Ellipsis
+            )
+            // "Ver más" / "Ver menos" toggle — only show if the description is long enough
+            // to actually be truncated. We approximate this by line count: if the description
+            // has more newlines than collapsedMaxLines, or is reasonably long, show the button.
+            // Compose can't easily measure truncated state, so we use a heuristic.
+            val lineCount = description.count { it == '\n' } + 1
+            val isLikelyTruncated = lineCount > collapsedMaxLines || description.length > collapsedMaxLines * 40
+            if (isLikelyTruncated) {
+                Text(
+                    text = if (expanded) "Ver menos" else "Ver más",
+                    color = accentColor,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Medium,
+                    modifier = Modifier
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null
+                        ) { expanded = !expanded }
+                        .padding(top = 2.dp)
+                )
+            }
+        }
+    }
+}
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun PostCard(
@@ -1005,11 +1079,23 @@ fun PostCard(
                 onMuteChanged = onMuteChanged,
                 onClick = onVideoClick,
                 onPlayerRef = onVideoPlayerRef,
-                isOverlayShowing = isVideoOverlayShowing,
-                title = postResponse.video.title.takeIf { it.isNotBlank() },
-                description = postResponse.video.description.takeIf { it.isNotBlank() }
-                    ?: post.content.takeIf { it.isNotBlank() }
+                isOverlayShowing = isVideoOverlayShowing
             )
+
+            // Video title + description BELOW the video (with "Ver más" expansion)
+            val videoTitle = postResponse.video.title.takeIf { it.isNotBlank() }
+            val videoDescription = postResponse.video.description.takeIf { it.isNotBlank() }
+            if (videoTitle != null || videoDescription != null) {
+                VideoDetailsSection(
+                    title = videoTitle,
+                    description = videoDescription,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                    collapsedMaxLines = 2,
+                    titleColor = onCardColor,
+                    descriptionColor = onCardColorVariant,
+                    accentColor = MaterialTheme.colorScheme.primary
+                )
+            }
         }
 
         // ═══════════ ACTIONS ROW: like, comment, repost, share, save ═══════════
@@ -1289,45 +1375,6 @@ fun VideoPlayerFeed(
                 )
             }
 
-            // Video title + description overlay (bottom-left, above progress bar)
-            if (!title.isNullOrBlank() || !description.isNullOrBlank()) {
-                Column(
-                    modifier = Modifier
-                        .align(Alignment.BottomStart)
-                        .fillMaxWidth()
-                        .background(
-                            Brush.verticalGradient(
-                                colors = listOf(
-                                    Color.Transparent,
-                                    Color.Black.copy(alpha = 0.55f)
-                                )
-                            )
-                        )
-                        .padding(horizontal = 12.dp, vertical = 8.dp)
-                ) {
-                    if (!title.isNullOrBlank()) {
-                        Text(
-                            text = title,
-                            color = Color.White,
-                            fontWeight = FontWeight.SemiBold,
-                            fontSize = 15.sp,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                    if (!description.isNullOrBlank()) {
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = description,
-                            color = Color.White.copy(alpha = 0.85f),
-                            fontSize = 13.sp,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                }
-            }
-
             // Progress bar — animated magical power waves
             if (isPlaying) {
                 val progress = if (totalDuration > 0) (currentPosition.toFloat() / totalDuration.toFloat()).coerceIn(0f, 1f) else 0f
@@ -1392,45 +1439,6 @@ fun VideoPlayerFeed(
                         .background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(4.dp))
                         .padding(horizontal = 6.dp, vertical = 2.dp)
                 )
-            }
-
-            // Video title + description overlay (bottom-left)
-            if (!title.isNullOrBlank() || !description.isNullOrBlank()) {
-                Column(
-                    modifier = Modifier
-                        .align(Alignment.BottomStart)
-                        .fillMaxWidth()
-                        .background(
-                            Brush.verticalGradient(
-                                colors = listOf(
-                                    Color.Transparent,
-                                    Color.Black.copy(alpha = 0.6f)
-                                )
-                            )
-                        )
-                        .padding(horizontal = 12.dp, vertical = 8.dp)
-                ) {
-                    if (!title.isNullOrBlank()) {
-                        Text(
-                            text = title,
-                            color = Color.White,
-                            fontWeight = FontWeight.SemiBold,
-                            fontSize = 15.sp,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                    if (!description.isNullOrBlank()) {
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = description,
-                            color = Color.White.copy(alpha = 0.85f),
-                            fontSize = 13.sp,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                }
             }
         }
     }
@@ -1639,41 +1647,25 @@ fun VideoDetailOverlay(
                 }
             }
 
-            // Bottom-left: author info + title + description (TikTok-style)
+            // Bottom-left: author info + title + description with "Ver más" (TikTok-style)
             Column(
                 modifier = Modifier
                     .align(Alignment.BottomStart)
                     .padding(start = 12.dp, bottom = 100.dp)
-                    .fillMaxWidth(0.7f)
+                    .fillMaxWidth(0.78f)
             ) {
                 Text(text = "@${postResponse.authorUsername}", color = Color.White, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleSmall)
                 Spacer(modifier = Modifier.height(4.dp))
-                // Video title (1 line)
-                postResponse.video?.title?.takeIf { it.isNotBlank() }?.let { vTitle ->
-                    Text(
-                        text = vTitle,
-                        color = Color.White,
-                        fontWeight = FontWeight.SemiBold,
-                        style = MaterialTheme.typography.bodyMedium,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Spacer(modifier = Modifier.height(2.dp))
-                }
-                // Video description (2 lines, opens overlay for full view)
-                postResponse.video?.description?.takeIf { it.isNotBlank() }?.let { vDesc ->
-                    Text(
-                        text = vDesc,
-                        color = Color.White.copy(alpha = 0.9f),
-                        style = MaterialTheme.typography.bodySmall,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Spacer(modifier = Modifier.height(2.dp))
-                }
-                if (post.content.isNotBlank()) {
-                    Text(text = post.content, color = Color.White.copy(alpha = 0.9f), style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                }
+                // Video title + description (collapses to 2 lines, expands with "Ver más")
+                VideoDetailsSection(
+                    title = postResponse.video?.title?.takeIf { it.isNotBlank() },
+                    description = postResponse.video?.description?.takeIf { it.isNotBlank() }
+                        ?: post.content.takeIf { it.isNotBlank() },
+                    collapsedMaxLines = 2,
+                    titleColor = Color.White,
+                    descriptionColor = Color.White.copy(alpha = 0.9f),
+                    accentColor = Color.White
+                )
             }
 
             // Progress bar at very bottom — animated magical power waves
@@ -1777,26 +1769,16 @@ fun VideoDetailOverlay(
                         }
                     }
 
-                    // Video title (full) + description (full) — shows everything, no maxLines limit
+                    // Video title + description with "Ver más" expansion (collapses to 3 lines)
                     val videoTitle = postResponse.video?.title?.takeIf { it.isNotBlank() }
                     val videoDescription = postResponse.video?.description?.takeIf { it.isNotBlank() }
-                    if (videoTitle != null) {
+                    if (videoTitle != null || videoDescription != null) {
                         item {
-                            Text(
-                                text = videoTitle,
-                                fontWeight = FontWeight.SemiBold,
-                                style = MaterialTheme.typography.titleMedium,
-                                fontSize = 18.sp,
-                                modifier = Modifier.padding(top = 4.dp, bottom = 4.dp)
-                            )
-                        }
-                    }
-                    if (videoDescription != null) {
-                        item {
-                            Text(
-                                text = videoDescription,
-                                style = MaterialTheme.typography.bodyMedium,
-                                modifier = Modifier.padding(bottom = 8.dp)
+                            VideoDetailsSection(
+                                title = videoTitle,
+                                description = videoDescription,
+                                modifier = Modifier.padding(top = 4.dp, bottom = 8.dp),
+                                collapsedMaxLines = 3
                             )
                         }
                     }
