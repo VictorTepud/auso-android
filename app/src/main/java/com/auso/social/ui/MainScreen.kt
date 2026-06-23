@@ -294,6 +294,23 @@ fun MainScreen(
                                     containerColor = Color.Transparent,
                                 ),
                                 actions = {
+                                    // Circular + button to create a new post
+                                    Box(
+                                        modifier = Modifier
+                                            .size(32.dp)
+                                            .clip(CircleShape)
+                                            .background(MaterialTheme.colorScheme.primary)
+                                            .clickable { showCreatePostDialog = true },
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            Icons.Filled.Add,
+                                            contentDescription = "Crear publicación",
+                                            tint = MaterialTheme.colorScheme.onPrimary,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.width(4.dp))
                                     IconButton(onClick = { /* TODO: Open search */ }) {
                                         Icon(
                                             Icons.Filled.Search,
@@ -387,19 +404,6 @@ fun MainScreen(
                 }
             }
 
-            // FAB only on Home tab
-            if (selectedBottomTab == 0) {
-                FloatingActionButton(
-                    onClick = { showCreatePostDialog = true },
-                    modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        .padding(end = 16.dp, bottom = 16.dp),
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    contentColor = MaterialTheme.colorScheme.onPrimary
-                ) {
-                    Icon(Icons.Filled.Add, contentDescription = "Crear post")
-                }
-            }
         }
     }
 
