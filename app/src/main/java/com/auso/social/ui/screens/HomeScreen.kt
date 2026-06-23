@@ -93,6 +93,10 @@ fun HomeScreen(
     // so we share the CORRECT player with the overlay when a specific video is tapped
     val videoPlayerMap = remember { mutableStateMapOf<String, androidx.media3.exoplayer.ExoPlayer>() }
 
+    // Map of postId -> playback position (ms): lets the feed resume the video from
+    // the exact point where the overlay left off, and vice versa.
+    val videoResumePositions = remember { mutableStateMapOf<String, Long>() }
+
     // Track scroll direction
     LaunchedEffect(listState) {
         var prevIndex = listState.firstVisibleItemIndex
@@ -307,7 +311,8 @@ fun HomeScreen(
                             }
                         },
                         isVideoOverlayShowing = videoDetailPost?.post?.id == postResponse.post.id,
-                        currentUserId = currentUserIdValue
+                        currentUserId = currentUserIdValue,
+                        videoResumePosition = videoResumePositions[postResponse.post.id] ?: 0L
                     )
                 }
             }
@@ -316,14 +321,21 @@ fun HomeScreen(
         // Video detail overlay — on top of everything, so main content stays behind
         if (videoDetailPost != null) {
             LaunchedEffect(Unit) { onVideoOverlayChanged(true) }
+            val overlayPostId = videoDetailPost!!.post.id
             VideoDetailOverlay(
                 postResponse = videoDetailPost!!,
                 isMuted = isGlobalMuted,
                 onMuteChanged = onMuteChanged,
                 onBack = { videoDetailPost = null; onVideoOverlayChanged(false) },
                 onAuthorClick = onAuthorClick,
-                sharedPlayer = videoPlayerMap[videoDetailPost!!.post.id],
-                currentUserId = currentUserIdValue
+                sharedPlayer = videoPlayerMap[overlayPostId],
+                currentUserId = currentUserIdValue,
+                // When the overlay closes, save the final position so the feed can resume there.
+                // Also restore playback in the feed (so the video keeps playing where it left off).
+                onClosePosition = { finalPos ->
+                    videoResumePositions[overlayPostId] = finalPos
+                    onVideoPlayChanged(overlayPostId)
+                }
             )
         }
     }
@@ -347,8 +359,10 @@ fun CreatePostDialog(
     var videoTitle by remember { mutableStateOf("") }
     var videoDescription by remember { mutableStateOf("") }
     var isPosting by remember { mutableStateOf(false) }
-    var uploadProgress by remember { mutableStateOf(0f) } // 0f..1f real progress
+    var uploadProgress by remember { mutableStateOf(0f) } // 0f..1f real progress (upload phase)
     var uploadProgressText by remember { mutableStateOf("") }
+    var processingProgress by remember { mutableStateOf(-1f) } // -1 = idle; 0..1 = converting
+    var processingElapsed by remember { mutableStateOf(0) } // seconds elapsed in conversion
     var error by remember { mutableStateOf("") }
     val coroutineScope = rememberCoroutineScope()
     val context = LocalContext.current
@@ -441,11 +455,57 @@ fun CreatePostDialog(
                                                     )
                                                 }
                                                 uploadProgressText = "Procesando en el servidor..."
+                                                processingProgress = 0f
                                                 val response = AusoApiClient.api.createVideoPost("Bearer $token", parts)
-                                                if (response.isSuccessful) { onPostCreated(); onDismiss() }
-                                                else { error = "Error al publicar video: ${response.code()}" }
+                                                if (!response.isSuccessful) {
+                                                    error = "Error al publicar video: ${response.code()}"
+                                                    isPosting = false
+                                                    processingProgress = -1f
+                                                    return@launch
+                                                }
+                                                // After upload, poll getPost until the video is fully processed
+                                                // (post_videos row exists with a non-empty hls_master_playlist_url).
+                                                val postId = response.body()?.post?.id
+                                                if (postId.isNullOrBlank()) {
+                                                    error = "Respuesta inválida del servidor"
+                                                    isPosting = false
+                                                    processingProgress = -1f
+                                                    return@launch
+                                                }
+                                                uploadProgress = 1f
+                                                uploadProgressText = ""
+                                                val startTime = System.currentTimeMillis()
+                                                var processed = false
+                                                while (!processed) {
+                                                    val elapsedSec = ((System.currentTimeMillis() - startTime) / 1000).toInt()
+                                                    processingElapsed = elapsedSec
+                                                    processingProgress = (elapsedSec / 60f).coerceIn(0f, 0.99f)
+                                                    kotlinx.coroutines.delay(2000)
+                                                    try {
+                                                        val pollResp = AusoApiClient.api.getPost("Bearer $token", postId)
+                                                        if (pollResp.isSuccessful) {
+                                                            val video = pollResp.body()?.video
+                                                            if (video != null && video.hlsMasterPlaylistUrl.isNotBlank()) {
+                                                                processed = true
+                                                            }
+                                                        }
+                                                    } catch (_: Exception) { /* retry next iteration */ }
+                                                    // Safety timeout: 5 minutes
+                                                    if (elapsedSec > 300) {
+                                                        error = "El video está tardando demasiado en procesarse. Cierra y revisa más tarde."
+                                                        isPosting = false
+                                                        processingProgress = -1f
+                                                        return@launch
+                                                    }
+                                                }
+                                                processingProgress = 1f
+                                                processingElapsed = 0
+                                                onPostCreated(); onDismiss()
                                             } catch (e: Exception) { error = "Error: ${e.message}" }
-                                            finally { isPosting = false }
+                                            finally {
+                                                isPosting = false
+                                                processingProgress = -1f
+                                            }
                                         }
                                     }
                                     "image" -> {
@@ -767,20 +827,42 @@ fun CreatePostDialog(
                             }
                         }
 
-                        // ─── Upload progress (real %) ───
+                        // ─── Upload + processing progress ───
                         if (isPosting) {
                             item {
                                 Column(modifier = Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-                                    LinearProgressIndicator(
-                                        progress = { uploadProgress },
-                                        modifier = Modifier.fillMaxWidth()
-                                    )
-                                    Spacer(modifier = Modifier.height(8.dp))
-                                    Text(
-                                        uploadProgressText,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
+                                    // Phase 1: upload (real %)
+                                    if (uploadProgress < 1f && processingProgress < 0f) {
+                                        LinearProgressIndicator(
+                                            progress = { uploadProgress },
+                                            modifier = Modifier.fillMaxWidth()
+                                        )
+                                        Spacer(modifier = Modifier.height(8.dp))
+                                        Text(
+                                            uploadProgressText,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    } else {
+                                        // Phase 2: server-side conversion (indeterminate-ish bar that fills slowly)
+                                        LinearProgressIndicator(
+                                            progress = { processingProgress.coerceAtLeast(0.05f) },
+                                            modifier = Modifier.fillMaxWidth()
+                                        )
+                                        Spacer(modifier = Modifier.height(8.dp))
+                                        Text(
+                                            "Procesando video en el servidor... ${processingElapsed}s",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        Text(
+                                            "Esto puede tardar unos minutos según la duración del video.",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                            fontSize = 11.sp
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -907,7 +989,8 @@ fun PostCard(
     onVideoClick: () -> Unit = {},
     onVideoPlayerRef: (androidx.media3.exoplayer.ExoPlayer?) -> Unit = {},
     isVideoOverlayShowing: Boolean = false,
-    currentUserId: String? = null
+    currentUserId: String? = null,
+    videoResumePosition: Long = 0L
 ) {
     val post = postResponse.post
     val context = LocalContext.current
@@ -1079,7 +1162,9 @@ fun PostCard(
                 onMuteChanged = onMuteChanged,
                 onClick = onVideoClick,
                 onPlayerRef = onVideoPlayerRef,
-                isOverlayShowing = isVideoOverlayShowing
+                isOverlayShowing = isVideoOverlayShowing,
+                resumePosition = videoResumePosition,
+                onDoubleClick = onLikeClick
             )
 
             // Video title + description BELOW the video (with "Ver más" expansion)
@@ -1261,7 +1346,9 @@ fun VideoPlayerFeed(
     onPlayerRef: (androidx.media3.exoplayer.ExoPlayer?) -> Unit = {},
     isOverlayShowing: Boolean = false,
     title: String? = null,
-    description: String? = null
+    description: String? = null,
+    resumePosition: Long = 0L,
+    onDoubleClick: () -> Unit = {}
 ) {
     val context = LocalContext.current
     var isPlaying by remember { mutableStateOf(false) }
@@ -1286,6 +1373,8 @@ fun VideoPlayerFeed(
         val exoPlayer = remember {
             androidx.media3.exoplayer.ExoPlayer.Builder(context).build().apply {
                 setMediaItem(androidx.media3.common.MediaItem.fromUri(videoUrl))
+                // Resume from saved position (continuity from overlay → feed)
+                if (resumePosition > 0L) seekTo(resumePosition)
                 prepare()
                 playWhenReady = true
                 volume = if (isMuted) 0f else 1f
@@ -1349,15 +1438,40 @@ fun VideoPlayerFeed(
                 modifier = Modifier.fillMaxSize()
             )
 
-            // Tap to open overlay
+            // Tap (single) to open overlay; double tap to like — heart animation overlay
+            var showHeartAnim by remember { mutableStateOf(false) }
+            val heartScale = remember { Animatable(0f) }
+            if (showHeartAnim) {
+                LaunchedEffect(showHeartAnim) {
+                    heartScale.snapTo(0f)
+                    heartScale.animateTo(1.3f)
+                    heartScale.animateTo(0f)
+                    showHeartAnim = false
+                }
+            }
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .clickable(
+                    .combinedClickable(
                         interactionSource = remember { MutableInteractionSource() },
-                        indication = null
-                    ) { onClick() }
+                        indication = null,
+                        onClick = { onClick() },
+                        onDoubleClick = {
+                            onDoubleClick()
+                            showHeartAnim = true
+                        }
+                    )
             )
+            if (showHeartAnim) {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Icon(
+                        Icons.Filled.Favorite,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(90.dp).scale(heartScale.value)
+                    )
+                }
+            }
 
             // Mute button — icon only, no background
             IconButton(
@@ -1458,7 +1572,8 @@ fun VideoDetailOverlay(
     onBack: () -> Unit = {},
     onAuthorClick: (String) -> Unit = {},
     sharedPlayer: androidx.media3.exoplayer.ExoPlayer? = null,
-    currentUserId: String? = null
+    currentUserId: String? = null,
+    onClosePosition: (Long) -> Unit = {}
 ) {
     val post = postResponse.post
     val context = LocalContext.current
@@ -1523,6 +1638,8 @@ fun VideoDetailOverlay(
         exoPlayer.addListener(listener)
         onDispose {
             exoPlayer.removeListener(listener)
+            // Report the final playback position so the feed can resume from there
+            onClosePosition(exoPlayer.currentPosition.coerceAtLeast(0L))
             exoPlayer.release()
         }
     }
@@ -1790,7 +1907,7 @@ fun VideoDetailOverlay(
                         }
                     }
 
-                    // Actions row
+                    // Actions row — no comment icon here (comments live in the section below)
                     item {
                         Row(
                             modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
@@ -1800,12 +1917,6 @@ fun VideoDetailOverlay(
                                 Icon(if (postResponse.isLiked) Icons.Default.Favorite else Icons.Default.FavoriteBorder, contentDescription = null, tint = if (postResponse.isLiked) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(22.dp))
                                 Spacer(modifier = Modifier.width(4.dp))
                                 Text("${postResponse.likesCount}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                            Spacer(modifier = Modifier.width(24.dp))
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Default.ChatBubbleOutline, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(22.dp))
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("${postResponse.commentsCount}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                             Spacer(modifier = Modifier.width(24.dp))
                             IconButton(onClick = {
