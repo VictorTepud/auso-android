@@ -27,6 +27,14 @@ class TokenManager(private val context: Context) {
         prefs[TOKEN_KEY]
     }
 
+    val username: Flow<String?> = context.dataStore.data.map { prefs ->
+        prefs[USERNAME_KEY]
+    }
+
+    val userId: Flow<String?> = context.dataStore.data.map { prefs ->
+        prefs[USER_ID_KEY]
+    }
+
     suspend fun saveToken(token: String) {
         context.dataStore.edit { prefs ->
             prefs[TOKEN_KEY] = token
@@ -44,6 +52,18 @@ class TokenManager(private val context: Context) {
     suspend fun getTokenSync(): String? {
         return context.dataStore.data.map { prefs ->
             prefs[TOKEN_KEY]
+        }.first()
+    }
+
+    suspend fun getUsernameSync(): String? {
+        return context.dataStore.data.map { prefs ->
+            prefs[USERNAME_KEY]
+        }.first()
+    }
+
+    suspend fun getUserIdSync(): String? {
+        return context.dataStore.data.map { prefs ->
+            prefs[USER_ID_KEY]
         }.first()
     }
 

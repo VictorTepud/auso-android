@@ -48,6 +48,7 @@ import com.auso.social.network.AusoApiClient
 import com.auso.social.ui.components.MagicProgressBar
 import com.auso.social.network.model.CreateTextPostRequest
 import com.auso.social.network.model.PostResponse
+import com.auso.social.network.model.UserProfile
 import com.auso.social.viewmodel.AuthViewModel
 import kotlinx.coroutines.launch
 import okhttp3.MediaType.Companion.toMediaType
@@ -76,6 +77,11 @@ fun HomeScreen(
     var isLoading by remember { mutableStateOf(false) }
     val coroutineScope = rememberCoroutineScope()
     val listState = rememberLazyListState()
+
+    // Current logged-in user id — used to detect own posts and hide the Follow button
+    val currentUserId by (authViewModel?.currentUser ?: kotlinx.coroutines.flow.MutableStateFlow<UserProfile?>(null))
+        .collectAsState()
+    val currentUserIdValue = currentUserId?.id
 
     // Video detail overlay state
     var videoDetailPost by remember { mutableStateOf<PostResponse?>(null) }
@@ -297,7 +303,8 @@ fun HomeScreen(
                                 videoPlayerMap.remove(postResponse.post.id)
                             }
                         },
-                        isVideoOverlayShowing = videoDetailPost?.post?.id == postResponse.post.id
+                        isVideoOverlayShowing = videoDetailPost?.post?.id == postResponse.post.id,
+                        currentUserId = currentUserIdValue
                     )
                 }
             }
@@ -312,7 +319,8 @@ fun HomeScreen(
                 onMuteChanged = onMuteChanged,
                 onBack = { videoDetailPost = null; onVideoOverlayChanged(false) },
                 onAuthorClick = onAuthorClick,
-                sharedPlayer = videoPlayerMap[videoDetailPost!!.post.id]
+                sharedPlayer = videoPlayerMap[videoDetailPost!!.post.id],
+                currentUserId = currentUserIdValue
             )
         }
     }
@@ -529,7 +537,8 @@ fun PostCard(
     onMuteChanged: (Boolean) -> Unit = {},
     onVideoClick: () -> Unit = {},
     onVideoPlayerRef: (androidx.media3.exoplayer.ExoPlayer?) -> Unit = {},
-    isVideoOverlayShowing: Boolean = false
+    isVideoOverlayShowing: Boolean = false,
+    currentUserId: String? = null
 ) {
     val post = postResponse.post
     val context = LocalContext.current
@@ -538,6 +547,9 @@ fun PostCard(
     // Double-tap like animation
     var showLikeAnimation by remember { mutableStateOf(false) }
     val likeScale = remember { Animatable(0f) }
+
+    // Whether this post belongs to the logged-in user — hides the Follow button
+    val isOwnPost = currentUserId != null && post.userId == currentUserId
 
     val configuration = LocalConfiguration.current
     val screenHeightDp = configuration.screenHeightDp
@@ -608,18 +620,20 @@ fun PostCard(
                     )
                 }
             }
-            // Follow button
-            TextButton(
-                onClick = { /* TODO: Follow API */ },
-                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 2.dp),
-                modifier = Modifier.height(28.dp)
-            ) {
-                Text(
-                    text = if (postResponse.isFollowingAuthor) "Siguiendo" else "Seguir",
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = if (postResponse.isFollowingAuthor) onCardColorVariant else MaterialTheme.colorScheme.primary
-                )
+            // Follow button — hidden for the logged-in user's own posts
+            if (!isOwnPost) {
+                TextButton(
+                    onClick = { /* TODO: Follow API */ },
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 2.dp),
+                    modifier = Modifier.height(28.dp)
+                ) {
+                    Text(
+                        text = if (postResponse.isFollowingAuthor) "Siguiendo" else "Seguir",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = if (postResponse.isFollowingAuthor) onCardColorVariant else MaterialTheme.colorScheme.primary
+                    )
+                }
             }
             // More menu
             Box {
@@ -1058,11 +1072,15 @@ fun VideoDetailOverlay(
     onMuteChanged: (Boolean) -> Unit = {},
     onBack: () -> Unit = {},
     onAuthorClick: (String) -> Unit = {},
-    sharedPlayer: androidx.media3.exoplayer.ExoPlayer? = null
+    sharedPlayer: androidx.media3.exoplayer.ExoPlayer? = null,
+    currentUserId: String? = null
 ) {
     val post = postResponse.post
     val context = LocalContext.current
     var isSaved by remember { mutableStateOf(false) }
+
+    // Whether this post belongs to the logged-in user — hides the Follow button
+    val isOwnPost = currentUserId != null && post.userId == currentUserId
 
     var isPlaying by remember { mutableStateOf(true) }
     var currentPosition by remember { mutableLongStateOf(0L) }
@@ -1350,8 +1368,11 @@ fun VideoDetailOverlay(
                                 Text(text = postResponse.authorDisplayName, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.titleMedium)
                                 Text(text = "@${postResponse.authorUsername}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
-                            Button(onClick = { /* TODO: Follow */ }, contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp)) {
-                                Text("Seguir", fontSize = 13.sp)
+                            // Follow button — hidden for the logged-in user's own posts
+                            if (!isOwnPost) {
+                                Button(onClick = { /* TODO: Follow */ }, contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp)) {
+                                    Text(if (postResponse.isFollowingAuthor) "Siguiendo" else "Seguir", fontSize = 13.sp)
+                                }
                             }
                         }
                     }

@@ -29,6 +29,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import com.auso.social.data.TokenManager
 import com.auso.social.network.AusoApiClient
 import com.auso.social.network.model.PostResponse
 import com.auso.social.network.model.UserProfile
@@ -54,6 +55,18 @@ fun UserProfileScreen(
     var isFollowLoading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf("") }
     val coroutineScope = rememberCoroutineScope()
+
+    // Detect whether this profile belongs to the logged-in user
+    // (so we hide the Follow button and avoid showing self-follow)
+    val context = androidx.compose.ui.platform.LocalContext.current
+    var isOwnProfile by remember { mutableStateOf(false) }
+    var currentUserId by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(username) {
+        val tokenManager = TokenManager(context)
+        val storedUsername = tokenManager.getUsernameSync()
+        currentUserId = tokenManager.getUserIdSync()
+        isOwnProfile = storedUsername?.equals(username, ignoreCase = true) == true
+    }
 
     // Load user profile
     LaunchedEffect(username) {
@@ -219,46 +232,49 @@ fun UserProfileScreen(
                             )
                         }
 
-                        Button(
-                            onClick = {
-                                if (isFollowLoading) return@Button
-                                isFollowLoading = true
-                                coroutineScope.launch {
-                                    try {
-                                        val token = AusoApiClient.getToken()
-                                        val userId = userProfile?.id
-                                        if (token != null && userId != null) {
-                                            val response = AusoApiClient.api.toggleFollow(
-                                                "Bearer $token", userId
-                                            )
-                                            if (response.isSuccessful) {
-                                                isFollowing = response.body()?.following ?: !isFollowing
+                        // Follow button — hidden when viewing own profile
+                        if (!isOwnProfile) {
+                            Button(
+                                onClick = {
+                                    if (isFollowLoading) return@Button
+                                    isFollowLoading = true
+                                    coroutineScope.launch {
+                                        try {
+                                            val token = AusoApiClient.getToken()
+                                            val userId = userProfile?.id
+                                            if (token != null && userId != null) {
+                                                val response = AusoApiClient.api.toggleFollow(
+                                                    "Bearer $token", userId
+                                                )
+                                                if (response.isSuccessful) {
+                                                    isFollowing = response.body()?.following ?: !isFollowing
+                                                }
                                             }
-                                        }
-                                    } catch (_: Exception) {}
-                                    isFollowLoading = false
+                                        } catch (_: Exception) {}
+                                        isFollowLoading = false
+                                    }
+                                },
+                                shape = RoundedCornerShape(20.dp),
+                                colors = if (isFollowing) {
+                                    ButtonDefaults.outlinedButtonColors()
+                                } else {
+                                    ButtonDefaults.buttonColors()
+                                },
+                                modifier = Modifier.height(36.dp)
+                            ) {
+                                if (isFollowLoading) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(16.dp),
+                                        strokeWidth = 2.dp,
+                                        color = if (isFollowing) MaterialTheme.colorScheme.primary
+                                        else MaterialTheme.colorScheme.onPrimary
+                                    )
+                                } else {
+                                    Text(
+                                        text = if (isFollowing) "Siguiendo" else "Seguir",
+                                        fontSize = 13.sp
+                                    )
                                 }
-                            },
-                            shape = RoundedCornerShape(20.dp),
-                            colors = if (isFollowing) {
-                                ButtonDefaults.outlinedButtonColors()
-                            } else {
-                                ButtonDefaults.buttonColors()
-                            },
-                            modifier = Modifier.height(36.dp)
-                        ) {
-                            if (isFollowLoading) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(16.dp),
-                                    strokeWidth = 2.dp,
-                                    color = if (isFollowing) MaterialTheme.colorScheme.primary
-                                    else MaterialTheme.colorScheme.onPrimary
-                                )
-                            } else {
-                                Text(
-                                    text = if (isFollowing) "Siguiendo" else "Seguir",
-                                    fontSize = 13.sp
-                                )
                             }
                         }
                     }
@@ -348,7 +364,8 @@ fun UserProfileScreen(
                             }
                         },
                         onCommentClick = { /* TODO: Comments */ },
-                        onAuthorClick = onAuthorClick
+                        onAuthorClick = onAuthorClick,
+                        currentUserId = currentUserId
                     )
                 }
 

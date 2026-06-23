@@ -8,6 +8,7 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -130,6 +131,15 @@ fun MainScreen(
 
     // Other user's profile screen overlay
     if (showUserProfileScreen) {
+        // If the requested username matches the logged-in user, open the own profile instead
+        if (currentUser?.username.equals(viewingUsername, ignoreCase = true)) {
+            ProfileScreen(
+                authViewModel = authViewModel,
+                onBack = { showUserProfileScreen = false },
+                onLogout = onLogout
+            )
+            return
+        }
         UserProfileScreen(
             username = viewingUsername,
             onBack = { showUserProfileScreen = false },
@@ -246,6 +256,29 @@ fun MainScreen(
                         0 -> {
                             TopAppBar(
                                 windowInsets = WindowInsets.statusBars,
+                                navigationIcon = {
+                                    // Circular + button (left side) — blue outline, no fill
+                                    Box(
+                                        modifier = Modifier
+                                            .padding(start = 12.dp)
+                                            .size(32.dp)
+                                            .clip(CircleShape)
+                                            .border(
+                                                width = 2.dp,
+                                                color = MaterialTheme.colorScheme.primary,
+                                                shape = CircleShape
+                                            )
+                                            .clickable { showCreatePostDialog = true },
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            Icons.Filled.Add,
+                                            contentDescription = "Crear publicación",
+                                            tint = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
+                                },
                                 title = {
                                     Box {
                                         Row(
@@ -294,23 +327,6 @@ fun MainScreen(
                                     containerColor = Color.Transparent,
                                 ),
                                 actions = {
-                                    // Circular + button to create a new post
-                                    Box(
-                                        modifier = Modifier
-                                            .size(32.dp)
-                                            .clip(CircleShape)
-                                            .background(MaterialTheme.colorScheme.primary)
-                                            .clickable { showCreatePostDialog = true },
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Icon(
-                                            Icons.Filled.Add,
-                                            contentDescription = "Crear publicación",
-                                            tint = MaterialTheme.colorScheme.onPrimary,
-                                            modifier = Modifier.size(20.dp)
-                                        )
-                                    }
-                                    Spacer(modifier = Modifier.width(4.dp))
                                     IconButton(onClick = { /* TODO: Open search */ }) {
                                         Icon(
                                             Icons.Filled.Search,
