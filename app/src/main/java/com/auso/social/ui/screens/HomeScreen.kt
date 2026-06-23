@@ -99,6 +99,15 @@ fun HomeScreen(
     // the exact point where the overlay left off, and vice versa.
     val videoResumePositions = remember { mutableStateMapOf<String, Long>() }
 
+    // Comments bottom sheet — set to a postId to open it
+    var commentsPostId by remember { mutableStateOf<String?>(null) }
+
+    // Skip detection: track which posts the user has "seen" (visible ≥2s) without
+    // any positive interaction. When such a post scrolls out of view, we fire a
+    // "skip" impression (negative signal for the recommender).
+    val seenPostTimestamps = remember { mutableStateMapOf<String, Long>() }
+    val interactedPosts = remember { mutableStateMapOf<String, Boolean>() }
+
     // Track scroll direction
     LaunchedEffect(listState) {
         var prevIndex = listState.firstVisibleItemIndex
@@ -126,6 +135,48 @@ fun HomeScreen(
             }
             prevIndex = index
             prevOffset = offset
+        }
+    }
+
+    // Skip detection: when the list settles, mark the currently visible posts as "seen"
+    // (timestamp them). When a post that was seen for ≥2s scrolls out of view AND the user
+    // never interacted with it (no like/comment/share/watch), fire a "skip" impression.
+    LaunchedEffect(listState) {
+        snapshotFlow {
+            // Use a stable set of visible post IDs + the current post list
+            Pair(listState.firstVisibleItemIndex, listState.firstVisibleItemIndex + listState.layoutInfo.visibleItemsInfo.size)
+        }.collect { (startIdx, endIdx) ->
+            val visibleIds = posts.subList(
+                startIdx.coerceIn(0, posts.size),
+                endIdx.coerceIn(0, posts.size)
+            ).map { it.post.id }
+
+            // Mark newly-visible posts as seen (record timestamp)
+            for (id in visibleIds) {
+                if (!seenPostTimestamps.containsKey(id)) {
+                    seenPostTimestamps[id] = System.currentTimeMillis()
+                }
+            }
+
+            // Detect posts that left the viewport — fire skip if seen ≥2s and not interacted
+            val leftViewport = seenPostTimestamps.keys - visibleIds
+            for (id in leftViewport) {
+                val seenAt = seenPostTimestamps.remove(id) ?: continue
+                val dwellMs = System.currentTimeMillis() - seenAt
+                val interacted = interactedPosts.remove(id) == true
+                if (!interacted && dwellMs >= 2000L) {
+                    // Fire skip impression in the background (negative signal for the algo)
+                    coroutineScope.launch {
+                        try {
+                            val token = AusoApiClient.getToken() ?: return@launch
+                            AusoApiClient.api.recordImpression(
+                                "Bearer $token", id,
+                                CreateImpressionRequest(impressionType = "skip")
+                            )
+                        } catch (_: Exception) {}
+                    }
+                }
+            }
         }
     }
 
@@ -276,6 +327,8 @@ fun HomeScreen(
                     PostCard(
                         postResponse = postResponse,
                         onLikeClick = {
+                            // Mark as interacted (prevents a skip impression)
+                            interactedPosts[postResponse.post.id] = true
                             coroutineScope.launch {
                                 try {
                                     val token = AusoApiClient.getToken()
@@ -305,10 +358,16 @@ fun HomeScreen(
                                 } catch (_: Exception) {}
                             }
                         },
-                        onCommentClick = { /* TODO: Comments */ },
+                        onCommentClick = {
+                            // Mark as interacted (prevents a skip impression) and open the sheet
+                            interactedPosts[postResponse.post.id] = true
+                            commentsPostId = postResponse.post.id
+                        },
                         onAuthorClick = onAuthorClick,
                         onHashtagClick = onHashtagClick,
                         onShareClick = {
+                            // Mark as interacted (prevents a skip impression)
+                            interactedPosts[postResponse.post.id] = true
                             // Train the recommender: a share is the strongest positive signal
                             coroutineScope.launch {
                                 try {
@@ -324,6 +383,8 @@ fun HomeScreen(
                             }
                         },
                         onWatched = {
+                            // Mark as interacted (prevents a skip impression)
+                            interactedPosts[postResponse.post.id] = true
                             // Train the recommender: a 3s+ view is a mild positive signal
                             coroutineScope.launch {
                                 try {
@@ -381,6 +442,28 @@ fun HomeScreen(
                 onClosePosition = { finalPos ->
                     videoResumePositions[overlayPostId] = finalPos
                     onVideoPlayChanged(overlayPostId)
+                }
+            )
+        }
+
+        // Comments bottom sheet — opened when the user taps the comment action
+        if (commentsPostId != null) {
+            val pid = commentsPostId!!
+            CommentsBottomSheet(
+                postId = pid,
+                onDismiss = { commentsPostId = null },
+                onAuthorClick = onAuthorClick,
+                onCommentPosted = {
+                    // Train the recommender: a comment is a strong positive signal
+                    coroutineScope.launch {
+                        try {
+                            val token = AusoApiClient.getToken() ?: return@launch
+                            AusoApiClient.api.recordImpression(
+                                "Bearer $token", pid,
+                                CreateImpressionRequest(impressionType = "comment")
+                            )
+                        } catch (_: Exception) {}
+                    }
                 }
             )
         }
