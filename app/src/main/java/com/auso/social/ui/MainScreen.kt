@@ -429,6 +429,10 @@ fun MainScreen(
     }
 
     // Create post dialog
+    // Pause any playing feed video while the dialog is open
+    LaunchedEffect(showCreatePostDialog) {
+        if (showCreatePostDialog) currentlyPlayingVideoId = null
+    }
     if (showCreatePostDialog) {
         CreatePostDialog(
             onDismiss = {
