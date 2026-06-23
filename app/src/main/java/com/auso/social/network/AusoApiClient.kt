@@ -22,8 +22,8 @@ object AusoApiClient {
     // Default: real device on same network as server
     // Change this to your computer's local IP (run `ip addr` or `hostname -I` on Linux)
     // For emulator use: http://10.0.2.2:8080/
-    // Current server IP: 192.168.0.113 (PC local IP)
-    var baseUrl: String = "http://192.168.0.113:8080/"
+    // Current server IP: 192.168.10.107 (PC local IP)
+    var baseUrl: String = "http://192.168.10.107:8080/"
         set(value) {
             field = if (value.endsWith("/")) value else "$value/"
             rebuildRetrofit()
