@@ -62,6 +62,7 @@ import kotlin.math.roundToInt
  * Home screen - shows the post feed
  * FAB and create post dialog are handled by MainScreen
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
     tabName: String = "Amigos",
@@ -80,6 +81,10 @@ fun HomeScreen(
 ) {
     var posts by remember { mutableStateOf<List<PostResponse>>(emptyList()) }
     var isLoading by remember { mutableStateOf(false) }
+    var isLoadingMore by remember { mutableStateOf(false) }
+    var currentPage by remember { mutableIntStateOf(1) }
+    var hasMore by remember { mutableStateOf(true) }
+    var isRefreshing by remember { mutableStateOf(false) }
     val coroutineScope = rememberCoroutineScope()
     val listState = rememberLazyListState()
 
@@ -238,27 +243,91 @@ fun HomeScreen(
         }
     }
 
-    // Load feed — uses the recommendation algorithm for "Recomendado", the standard
+    // Load feed (page 1) — uses the recommendation algorithm for "Recomendado", the standard
     // chronological followees+self feed for "Amigos", and the global feed for "Explorar".
     LaunchedEffect(tabName, refreshTrigger) {
+        currentPage = 1
+        hasMore = true
         isLoading = true
         try {
             val token = AusoApiClient.getToken()
             if (token != null) {
                 val response = when (tabName) {
-                    "Recomendado" -> AusoApiClient.api.getRecommendedFeed("Bearer $token")
-                    "Explorar" -> AusoApiClient.api.getFeed("Bearer $token", postType = null)
-                    else -> AusoApiClient.api.getFeed("Bearer $token")
+                    "Recomendado" -> AusoApiClient.api.getRecommendedFeed("Bearer $token", page = 1)
+                    "Explorar" -> AusoApiClient.api.getFeed("Bearer $token", page = 1, postType = null)
+                    else -> AusoApiClient.api.getFeed("Bearer $token", page = 1)
                 }
                 if (response.isSuccessful) {
                     val feed = response.body()
                     posts = feed?.posts ?: emptyList()
+                    hasMore = (feed?.posts?.size ?: 0) >= 20
                 }
             }
         } catch (e: Exception) {
             // Silently fail
         }
         isLoading = false
+    }
+
+    // Pull-to-refresh: reload page 1
+    fun refresh() {
+        if (isRefreshing || isLoading) return
+        isRefreshing = true
+        coroutineScope.launch {
+            try {
+                val token = AusoApiClient.getToken()
+                if (token != null) {
+                    val response = when (tabName) {
+                        "Recomendado" -> AusoApiClient.api.getRecommendedFeed("Bearer $token", page = 1)
+                        "Explorar" -> AusoApiClient.api.getFeed("Bearer $token", page = 1, postType = null)
+                        else -> AusoApiClient.api.getFeed("Bearer $token", page = 1)
+                    }
+                    if (response.isSuccessful) {
+                        posts = response.body()?.posts ?: emptyList()
+                        currentPage = 1
+                        hasMore = true
+                    }
+                }
+            } catch (_: Exception) {}
+            isRefreshing = false
+        }
+    }
+
+    // Infinite scroll: when the user is near the end of the list, load the next page
+    LaunchedEffect(listState) {
+        snapshotFlow {
+            val lastVisible = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+            val total = listState.layoutInfo.totalItemsCount
+            Pair(lastVisible, total)
+        }.collect { (lastVisible, total) ->
+            if (total > 0 && lastVisible >= total - 3 && hasMore && !isLoadingMore && !isLoading && !isRefreshing) {
+                isLoadingMore = true
+                val nextPage = currentPage + 1
+                try {
+                    val token = AusoApiClient.getToken()
+                    if (token != null) {
+                        val response = when (tabName) {
+                            "Recomendado" -> AusoApiClient.api.getRecommendedFeed("Bearer $token", page = nextPage)
+                            "Explorar" -> AusoApiClient.api.getFeed("Bearer $token", page = nextPage, postType = null)
+                            else -> AusoApiClient.api.getFeed("Bearer $token", page = nextPage)
+                        }
+                        if (response.isSuccessful) {
+                            val newPosts = response.body()?.posts ?: emptyList()
+                            if (newPosts.isEmpty()) {
+                                hasMore = false
+                            } else {
+                                // Avoid duplicates (key by post id)
+                                val existingIds = posts.map { it.post.id }.toHashSet()
+                                posts = posts + newPosts.filter { it.post.id !in existingIds }
+                                currentPage = nextPage
+                                hasMore = newPosts.size >= 20
+                            }
+                        }
+                    }
+                } catch (_: Exception) {}
+                isLoadingMore = false
+            }
+        }
     }
 
     // Video detail overlay — drawn on top of feed content (not replacing it)
@@ -312,6 +381,11 @@ fun HomeScreen(
                 )
             }
         } else {
+            PullToRefreshBox(
+                isRefreshing = isRefreshing,
+                onRefresh = { refresh() },
+                modifier = Modifier.fillMaxSize()
+            ) {
             LazyColumn(
                 state = listState,
                 modifier = Modifier
@@ -419,9 +493,55 @@ fun HomeScreen(
                         },
                         isVideoOverlayShowing = videoDetailPost?.post?.id == postResponse.post.id,
                         currentUserId = currentUserIdValue,
-                        videoResumePosition = videoResumePositions[postResponse.post.id] ?: 0L
+                        videoResumePosition = videoResumePositions[postResponse.post.id] ?: 0L,
+                        onNotInterested = {
+                            // Mark as interacted so the skip detector doesn't double-fire
+                            interactedPosts[postResponse.post.id] = true
+                            // Strong negative signal — trains the algo AND blocks the post's hashtags
+                            coroutineScope.launch {
+                                try {
+                                    val token = AusoApiClient.getToken() ?: return@launch
+                                    AusoApiClient.api.recordImpression(
+                                        "Bearer $token",
+                                        postResponse.post.id,
+                                        CreateImpressionRequest(impressionType = "not_interested")
+                                    )
+                                } catch (_: Exception) {}
+                            }
+                            // Remove the post from the current feed so the user doesn't see it again
+                            posts = posts.filter { it.post.id != postResponse.post.id }
+                        }
                     )
                 }
+                // Infinite scroll footer
+                if (isLoadingMore) {
+                    item {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(24.dp),
+                                color = MaterialTheme.colorScheme.primary,
+                                strokeWidth = 2.dp
+                            )
+                        }
+                    }
+                } else if (!hasMore && posts.isNotEmpty()) {
+                    item {
+                        Text(
+                            text = "No hay más publicaciones",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp)
+                        )
+                    }
+                }
+            }
             }
         }
 
@@ -463,6 +583,14 @@ fun HomeScreen(
                                 CreateImpressionRequest(impressionType = "comment")
                             )
                         } catch (_: Exception) {}
+                    }
+                },
+                onCommentsChanged = { delta ->
+                    // Update the post's comment count in the feed without refetching
+                    posts = posts.map {
+                        if (it.post.id == pid) {
+                            it.copy(commentsCount = (it.commentsCount + delta).coerceAtLeast(0))
+                        } else it
                     }
                 }
             )
@@ -792,14 +920,14 @@ fun CreatePostDialog(
                         // ─── TEXT post fields ───
                         if (postType == "text") {
                             item {
-                                OutlinedTextField(
+                                HashtagTextField(
                                     value = content,
                                     onValueChange = { content = it },
-                                    label = { Text("Que estas pensando?") },
+                                    label = "Que estas pensando?",
                                     modifier = Modifier.fillMaxWidth(),
+                                    enabled = !isPosting,
                                     minLines = 4,
-                                    maxLines = 8,
-                                    enabled = !isPosting
+                                    maxLines = 8
                                 )
                             }
                         }
@@ -848,13 +976,13 @@ fun CreatePostDialog(
                                 }
                             }
                             item {
-                                OutlinedTextField(
+                                HashtagTextField(
                                     value = content,
                                     onValueChange = { content = it },
-                                    label = { Text("Descripcion (opcional)") },
+                                    label = "Descripcion (opcional)",
                                     modifier = Modifier.fillMaxWidth(),
-                                    maxLines = 4,
-                                    enabled = !isPosting
+                                    enabled = !isPosting,
+                                    maxLines = 4
                                 )
                             }
                         }
@@ -934,13 +1062,13 @@ fun CreatePostDialog(
                                 )
                             }
                             item {
-                                OutlinedTextField(
+                                HashtagTextField(
                                     value = videoDescription,
                                     onValueChange = { videoDescription = it },
-                                    label = { Text("Descripcion del video") },
+                                    label = "Descripcion del video",
                                     modifier = Modifier.fillMaxWidth(),
-                                    maxLines = 5,
-                                    enabled = !isPosting && selectedVideo != null
+                                    enabled = !isPosting && selectedVideo != null,
+                                    maxLines = 5
                                 )
                             }
                         }
@@ -1026,6 +1154,133 @@ private fun PostTypeChip(
             Icon(icon, contentDescription = null, modifier = Modifier.size(24.dp))
             Spacer(modifier = Modifier.height(4.dp))
             Text(label, fontSize = 12.sp)
+        }
+    }
+}
+
+/**
+ * OutlinedTextField with hashtag autocomplete.
+ *
+ * Detects when the user is typing a #tag (the last word starts with '#') and shows
+ * a dropdown of matching hashtags from the backend. Tapping a suggestion replaces
+ * the current partial tag with the full tag + a trailing space.
+ *
+ * @param value current text
+ * @param onValueChange callback when text changes
+ * @param label field label
+ * @param enabled whether the field is editable
+ * @param modifier standard modifier
+ * @param minLines / maxLines layout hints
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun HashtagTextField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    label: String,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    minLines: Int = 1,
+    maxLines: Int = 4
+) {
+    val coroutineScope = rememberCoroutineScope()
+    var suggestions by remember { mutableStateOf<List<com.auso.social.network.model.Hashtag>>(emptyList()) }
+    var showSuggestions by remember { mutableStateOf(false) }
+
+    // Detect the partial hashtag being typed (text after the last '#')
+    val currentTag = remember(value) {
+        val lastHash = value.lastIndexOf('#')
+        if (lastHash == -1) return@remember null
+        val after = value.substring(lastHash + 1)
+        // If there's a space after the #, it's not an active tag anymore
+        if (after.contains(' ') || after.contains('\n')) return@remember null
+        if (after.isEmpty()) return@remember "" // user just typed '#'
+        after.lowercase()
+    }
+
+    // Debounced search when the current tag changes
+    LaunchedEffect(currentTag) {
+        if (currentTag == null) {
+            showSuggestions = false
+            suggestions = emptyList()
+            return@LaunchedEffect
+        }
+        if (currentTag.isBlank()) {
+            // Show trending when only '#' is typed
+            try {
+                val token = AusoApiClient.getToken()
+                if (token != null) {
+                    val resp = AusoApiClient.api.trendingHashtags("Bearer $token")
+                    if (resp.isSuccessful) {
+                        val trending = resp.body() ?: emptyList()
+                        suggestions = trending.take(5).map {
+                            com.auso.social.network.model.Hashtag(
+                                id = it.tag, tag = it.tag, usageCount = it.usageCount
+                            )
+                        }
+                        showSuggestions = suggestions.isNotEmpty()
+                    }
+                }
+            } catch (_: Exception) {}
+        } else if (currentTag.length >= 1) {
+            kotlinx.coroutines.delay(300)
+            try {
+                val token = AusoApiClient.getToken()
+                if (token != null) {
+                    val resp = AusoApiClient.api.searchHashtags("Bearer $token", currentTag)
+                    if (resp.isSuccessful) {
+                        suggestions = (resp.body() ?: emptyList()).take(6)
+                        showSuggestions = suggestions.isNotEmpty()
+                    }
+                }
+            } catch (_: Exception) {}
+        }
+    }
+
+    Box(modifier = modifier) {
+        OutlinedTextField(
+            value = value,
+            onValueChange = onValueChange,
+            label = { Text(label) },
+            modifier = Modifier.fillMaxWidth(),
+            minLines = minLines,
+            maxLines = maxLines,
+            enabled = enabled
+        )
+        // Autocomplete dropdown anchored to the field
+        if (showSuggestions && suggestions.isNotEmpty()) {
+            DropdownMenu(
+                expanded = showSuggestions,
+                onDismissRequest = { showSuggestions = false },
+                modifier = Modifier.fillMaxWidth(0.9f)
+            ) {
+                suggestions.forEach { ht ->
+                    DropdownMenuItem(
+                        text = {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    "#${ht.tag}",
+                                    fontWeight = FontWeight.Medium,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    "${ht.usageCount} posts",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        },
+                        onClick = {
+                            // Replace the partial tag with the chosen tag + trailing space
+                            val lastHash = value.lastIndexOf('#')
+                            val newValue = value.substring(0, lastHash) + "#${ht.tag} "
+                            onValueChange(newValue)
+                            showSuggestions = false
+                        }
+                    )
+                }
+            }
         }
     }
 }
@@ -1153,7 +1408,8 @@ fun PostCard(
     videoResumePosition: Long = 0L,
     onHashtagClick: (String) -> Unit = {},
     onShareClick: () -> Unit = {},
-    onWatched: () -> Unit = {}
+    onWatched: () -> Unit = {},
+    onNotInterested: () -> Unit = {}
 ) {
     val post = postResponse.post
     val context = LocalContext.current
@@ -1256,7 +1512,10 @@ fun PostCard(
                     Icon(Icons.Default.MoreVert, contentDescription = "Mas opciones", tint = onCardColorVariant, modifier = Modifier.size(20.dp))
                 }
                 DropdownMenu(expanded = showMoreMenu, onDismissRequest = { showMoreMenu = false }) {
-                    DropdownMenuItem(text = { Text("No me interesa") }, onClick = { showMoreMenu = false }, leadingIcon = { Icon(Icons.Outlined.Block, null, modifier = Modifier.size(18.dp)) })
+                    DropdownMenuItem(text = { Text("No me interesa") }, onClick = {
+                        showMoreMenu = false
+                        onNotInterested()
+                    }, leadingIcon = { Icon(Icons.Outlined.Block, null, modifier = Modifier.size(18.dp)) })
                     DropdownMenuItem(text = { Text("Reportar") }, onClick = { showMoreMenu = false }, leadingIcon = { Icon(Icons.Outlined.Flag, null, modifier = Modifier.size(18.dp)) })
                 }
             }

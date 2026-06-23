@@ -37,20 +37,30 @@ fun SearchScreen(
 ) {
     var searchQuery by remember { mutableStateOf("") }
     var trending by remember { mutableStateOf<List<HashtagWithCount>>(emptyList()) }
+    var suggestedHashtags by remember { mutableStateOf<List<com.auso.social.network.model.Hashtag>>(emptyList()) }
+    var suggestedUsers by remember { mutableStateOf<List<UserProfile>>(emptyList()) }
     var users by remember { mutableStateOf<List<UserProfile>>(emptyList()) }
     var hashtags by remember { mutableStateOf<List<com.auso.social.network.model.Hashtag>>(emptyList()) }
     var isLoading by remember { mutableStateOf(false) }
     val coroutineScope = rememberCoroutineScope()
     var searchJob by remember { mutableStateOf<Job?>(null) }
 
-    // Load trending hashtags on first render (shown when query is empty)
+    // Load trending + suggested users/hashtags on first render (shown when query is empty)
     LaunchedEffect(Unit) {
         try {
             val token = AusoApiClient.getToken()
             if (token != null) {
-                val response = AusoApiClient.api.trendingHashtags("Bearer $token")
-                if (response.isSuccessful) {
-                    trending = response.body() ?: emptyList()
+                val trendingResp = AusoApiClient.api.trendingHashtags("Bearer $token")
+                if (trendingResp.isSuccessful) {
+                    trending = trendingResp.body() ?: emptyList()
+                }
+                val suggestedHashtagsResp = AusoApiClient.api.suggestedHashtags("Bearer $token")
+                if (suggestedHashtagsResp.isSuccessful) {
+                    suggestedHashtags = suggestedHashtagsResp.body() ?: emptyList()
+                }
+                val suggestedUsersResp = AusoApiClient.api.suggestedUsers("Bearer $token")
+                if (suggestedUsersResp.isSuccessful) {
+                    suggestedUsers = suggestedUsersResp.body() ?: emptyList()
                 }
             }
         } catch (_: Exception) {}
@@ -126,9 +136,9 @@ fun SearchScreen(
         )
 
         when {
-            // ─── Empty query → trending hashtags + hint ───
+            // ─── Empty query → suggested users + suggested hashtags + trending ───
             searchQuery.isBlank() -> {
-                if (trending.isEmpty()) {
+                if (suggestedUsers.isEmpty() && trending.isEmpty() && suggestedHashtags.isEmpty()) {
                     Column(
                         modifier = Modifier.fillMaxSize(),
                         horizontalAlignment = Alignment.CenterHorizontally,
@@ -150,14 +160,47 @@ fun SearchScreen(
                         )
                     }
                 } else {
-                    Column(modifier = Modifier.padding(horizontal = 16.dp)) {
-                        Text(
-                            "Trending",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(vertical = 12.dp)
-                        )
-                        LazyColumn {
+                    LazyColumn(modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
+                        // Suggested users (based on the user's interest categories)
+                        if (suggestedUsers.isNotEmpty()) {
+                            item {
+                                Text(
+                                    "Sugerido para ti",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(vertical = 12.dp)
+                                )
+                            }
+                            items(suggestedUsers, key = { it.id }) { user ->
+                                UserSearchRow(user = user, onClick = { onUserClick(user.username) })
+                            }
+                            item { Spacer(modifier = Modifier.height(8.dp)) }
+                        }
+                        // Suggested hashtags (based on the user's interest categories)
+                        if (suggestedHashtags.isNotEmpty()) {
+                            item {
+                                Text(
+                                    "Hashtags para ti",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(vertical = 12.dp)
+                                )
+                            }
+                            items(suggestedHashtags, key = { it.id }) { ht ->
+                                HashtagSearchRow(tag = ht.tag, usageCount = ht.usageCount, onClick = { onHashtagClick(ht.tag) })
+                            }
+                            item { Spacer(modifier = Modifier.height(8.dp)) }
+                        }
+                        // Trending hashtags (global)
+                        if (trending.isNotEmpty()) {
+                            item {
+                                Text(
+                                    "Trending",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(vertical = 12.dp)
+                                )
+                            }
                             items(trending, key = { it.tag }) { ht ->
                                 TrendingHashtagRow(
                                     hashtag = ht,

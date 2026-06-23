@@ -44,6 +44,7 @@ fun CommentsBottomSheet(
     postId: String,
     onDismiss: () -> Unit,
     onCommentPosted: () -> Unit = {},
+    onCommentsChanged: (delta: Int) -> Unit = {},
     onAuthorClick: (String) -> Unit = {}
 ) {
     val coroutineScope = rememberCoroutineScope()
@@ -53,6 +54,9 @@ fun CommentsBottomSheet(
     var isPosting by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
+    // Track the number of comments posted during this session, so the caller can
+    // update the PostCard's count when the sheet closes.
+    var postedCount by remember { mutableStateOf(0) }
 
     // Load comments on first render
     LaunchedEffect(postId) {
@@ -70,7 +74,14 @@ fun CommentsBottomSheet(
         isLoading = false
     }
 
-    ModalBottomSheet(onDismissRequest = onDismiss) {
+    // When the sheet closes, notify the caller of the net comment delta so the
+    // PostCard can update its comment count without refetching the feed.
+    val handleDismiss = {
+        if (postedCount != 0) onCommentsChanged(postedCount)
+        onDismiss()
+    }
+
+    ModalBottomSheet(onDismissRequest = handleDismiss) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -187,6 +198,7 @@ fun CommentsBottomSheet(
                                     val created = response.body()
                                     if (created != null) {
                                         comments = listOf(created) + comments
+                                        postedCount += 1
                                     }
                                     newComment = ""
                                     onCommentPosted()

@@ -52,6 +52,7 @@ fun ProfileScreen(
     var posts by remember { mutableStateOf<List<PostResponse>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
     var showEditDialog by remember { mutableStateOf(false) }
+    var showInterestsEditor by remember { mutableStateOf(false) }
     var uploadError by remember { mutableStateOf("") }
 
     // Local URIs for preview before upload
@@ -444,6 +445,21 @@ fun ProfileScreen(
                     }
                 }
 
+                // Edit interests button — lets the user re-pick their interest categories
+                // so the recommendation algorithm learns from the new selection.
+                item {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedButton(
+                        onClick = { showInterestsEditor = true },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text("Editar intereses")
+                    }
+                }
+
                 // Logout button
                 item {
                     Spacer(modifier = Modifier.height(16.dp))
@@ -462,6 +478,19 @@ fun ProfileScreen(
                     Spacer(modifier = Modifier.height(32.dp))
                 }
             }
+        }
+    }
+
+    // Interests editor overlay — reuses InterestsScreen so the user can update
+    // their interest categories (retrains the recommendation algorithm).
+    if (showInterestsEditor) {
+        androidx.compose.material3.Surface(
+            modifier = Modifier.fillMaxSize(),
+            color = MaterialTheme.colorScheme.background
+        ) {
+            InterestsScreen(
+                onComplete = { showInterestsEditor = false }
+            )
         }
     }
 

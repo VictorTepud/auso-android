@@ -230,6 +230,16 @@ interface AusoApi {
         @Header("Authorization") token: String
     ): Response<List<HashtagWithCount>>
 
+    @GET("api/v1/hashtags/suggested")
+    suspend fun suggestedHashtags(
+        @Header("Authorization") token: String
+    ): Response<List<Hashtag>>
+
+    @GET("api/v1/users/me/suggested")
+    suspend fun suggestedUsers(
+        @Header("Authorization") token: String
+    ): Response<List<UserProfile>>
+
     @GET("api/v1/hashtags/{tag}/posts")
     suspend fun getPostsByHashtag(
         @Header("Authorization") token: String,
