@@ -91,6 +91,8 @@ data class PostVideo(
     val width: Int = 0,
     val height: Int = 0,
     @SerializedName("thumbnail_url") val thumbnailUrl: String? = null,
+    val title: String = "",
+    val description: String = "",
     @SerializedName("created_at") val createdAt: String = ""
 )
 

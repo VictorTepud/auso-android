@@ -338,7 +338,12 @@ fun CreatePostDialog(
     onAddVideo: () -> Unit = {},
     onRemoveVideo: () -> Unit = {}
 ) {
+    // Post type selector: null = picker visible; otherwise the chosen type
+    var postType by remember { mutableStateOf<String?>(null) }
+
     var content by remember { mutableStateOf("") }
+    var videoTitle by remember { mutableStateOf("") }
+    var videoDescription by remember { mutableStateOf("") }
     var isPosting by remember { mutableStateOf(false) }
     var uploadProgress by remember { mutableStateOf("") }
     var error by remember { mutableStateOf("") }
@@ -359,101 +364,253 @@ fun CreatePostDialog(
                 modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                OutlinedTextField(
-                    value = content,
-                    onValueChange = { content = it },
-                    label = { Text("Que estas pensando?") },
-                    modifier = Modifier.fillMaxWidth(),
-                    maxLines = 4,
-                    enabled = !isPosting
-                )
-
-                if (!isPosting) {
+                // ════════ STEP 1: post type selector (only when not chosen) ════════
+                if (postType == null) {
+                    Text(
+                        "Selecciona el tipo de publicacion",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        OutlinedButton(
-                            onClick = onAddImage,
+                        PostTypeChip(
+                            label = "Texto",
+                            icon = Icons.Default.TextFields,
                             modifier = Modifier.weight(1f),
-                            enabled = selectedVideo == null
-                        ) {
-                            Icon(Icons.Default.Image, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Imagen", fontSize = 12.sp)
-                        }
-                        OutlinedButton(
-                            onClick = onAddVideo,
+                            onClick = { postType = "text" }
+                        )
+                        PostTypeChip(
+                            label = "Imagen",
+                            icon = Icons.Default.Image,
                             modifier = Modifier.weight(1f),
-                            enabled = selectedImages.isEmpty()
-                        ) {
-                            Icon(Icons.Default.Movie, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Video", fontSize = 12.sp)
-                        }
+                            onClick = { postType = "image" }
+                        )
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        PostTypeChip(
+                            label = "Video",
+                            icon = Icons.Default.Movie,
+                            modifier = Modifier.weight(1f),
+                            onClick = { postType = "video" }
+                        )
+                        PostTypeChip(
+                            label = "Encuesta",
+                            icon = Icons.Default.Poll,
+                            modifier = Modifier.weight(1f),
+                            enabled = false, // TODO: implement poll creation
+                            onClick = { postType = "poll" }
+                        )
                     }
                 }
 
-                if (selectedImages.isNotEmpty()) {
-                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        items(selectedImages) { uri ->
-                            Box(modifier = Modifier.size(80.dp)) {
-                                AsyncImage(
-                                    model = uri,
-                                    contentDescription = "Imagen seleccionada",
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .clip(RoundedCornerShape(8.dp)),
-                                    contentScale = ContentScale.Crop
+                // ════════ STEP 2: type-specific fields ════════
+                if (postType != null) {
+                    // Header with selected type + change button
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        AssistChip(
+                            onClick = {},
+                            label = { Text(when (postType) {
+                                "text" -> "Texto"
+                                "image" -> "Imagen"
+                                "video" -> "Video"
+                                "poll" -> "Encuesta"
+                                else -> ""
+                            }) },
+                            leadingIcon = {
+                                Icon(
+                                    when (postType) {
+                                        "text" -> Icons.Default.TextFields
+                                        "image" -> Icons.Default.Image
+                                        "video" -> Icons.Default.Movie
+                                        "poll" -> Icons.Default.Poll
+                                        else -> Icons.Default.Edit
+                                    },
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp)
                                 )
-                                if (!isPosting) {
-                                    IconButton(
-                                        onClick = { onRemoveImage(uri) },
-                                        modifier = Modifier
-                                            .align(Alignment.TopEnd)
-                                            .size(24.dp)
-                                            .background(MaterialTheme.colorScheme.error, CircleShape)
-                                    ) {
-                                        Icon(Icons.Default.Close, contentDescription = "Quitar", tint = MaterialTheme.colorScheme.onError, modifier = Modifier.size(14.dp))
+                            }
+                        )
+                        if (!isPosting) {
+                            TextButton(onClick = {
+                                postType = null
+                                content = ""
+                                videoTitle = ""
+                                videoDescription = ""
+                            }) { Text("Cambiar tipo") }
+                        }
+                    }
+
+                    // ─── TEXT post fields ───
+                    if (postType == "text") {
+                        OutlinedTextField(
+                            value = content,
+                            onValueChange = { content = it },
+                            label = { Text("Que estas pensando?") },
+                            modifier = Modifier.fillMaxWidth(),
+                            maxLines = 4,
+                            enabled = !isPosting
+                        )
+                    }
+
+                    // ─── IMAGE post fields ───
+                    if (postType == "image") {
+                        if (!isPosting) {
+                            OutlinedButton(
+                                onClick = onAddImage,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Icon(Icons.Default.Image, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(if (selectedImages.isEmpty()) "Anadir imagenes" else "Anadir mas")
+                            }
+                        }
+                        if (selectedImages.isNotEmpty()) {
+                            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                items(selectedImages) { uri ->
+                                    Box(modifier = Modifier.size(80.dp)) {
+                                        AsyncImage(
+                                            model = uri,
+                                            contentDescription = "Imagen seleccionada",
+                                            modifier = Modifier
+                                                .fillMaxSize()
+                                                .clip(RoundedCornerShape(8.dp)),
+                                            contentScale = ContentScale.Crop
+                                        )
+                                        if (!isPosting) {
+                                            IconButton(
+                                                onClick = { onRemoveImage(uri) },
+                                                modifier = Modifier
+                                                    .align(Alignment.TopEnd)
+                                                    .size(24.dp)
+                                                    .background(MaterialTheme.colorScheme.error, CircleShape)
+                                            ) {
+                                                Icon(Icons.Default.Close, contentDescription = "Quitar", tint = MaterialTheme.colorScheme.onError, modifier = Modifier.size(14.dp))
+                                            }
+                                        }
                                     }
                                 }
                             }
                         }
+                        OutlinedTextField(
+                            value = content,
+                            onValueChange = { content = it },
+                            label = { Text("Descripcion (opcional)") },
+                            modifier = Modifier.fillMaxWidth(),
+                            maxLines = 3,
+                            enabled = !isPosting
+                        )
                     }
-                }
 
-                if (selectedVideo != null) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(MaterialTheme.colorScheme.surfaceVariant)
-                            .padding(12.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(Icons.Default.Movie, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(32.dp))
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("Video seleccionado", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
-                            Text(selectedVideo.lastPathSegment ?: "Video", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        }
+                    // ─── VIDEO post fields ───
+                    if (postType == "video") {
                         if (!isPosting) {
-                            IconButton(onClick = onRemoveVideo) {
-                                Icon(Icons.Default.Close, contentDescription = "Quitar video", tint = MaterialTheme.colorScheme.error)
+                            OutlinedButton(
+                                onClick = onAddVideo,
+                                modifier = Modifier.fillMaxWidth(),
+                                enabled = selectedVideo == null
+                            ) {
+                                Icon(Icons.Default.Movie, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(if (selectedVideo == null) "Seleccionar video" else "Cambiar video")
                             }
                         }
-                    }
-                }
 
-                if (isPosting) {
-                    Column(modifier = Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(uploadProgress, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        // Video preview using Android VideoView
+                        if (selectedVideo != null) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(180.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(Color.Black)
+                            ) {
+                                AndroidView(
+                                    factory = { ctx ->
+                                        android.widget.VideoView(ctx).apply {
+                                            setVideoURI(selectedVideo)
+                                            setOnPreparedListener { mp -> mp.isLooping = true }
+                                            start()
+                                        }
+                                    },
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                                // Remove button
+                                if (!isPosting) {
+                                    IconButton(
+                                        onClick = onRemoveVideo,
+                                        modifier = Modifier
+                                            .align(Alignment.TopEnd)
+                                            .padding(4.dp)
+                                            .size(28.dp)
+                                            .background(MaterialTheme.colorScheme.error, CircleShape)
+                                    ) {
+                                        Icon(Icons.Default.Close, contentDescription = "Quitar video", tint = MaterialTheme.colorScheme.onError, modifier = Modifier.size(16.dp))
+                                    }
+                                }
+                                Text(
+                                    text = selectedVideo.lastPathSegment ?: "video",
+                                    color = Color.White,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier
+                                        .align(Alignment.BottomStart)
+                                        .padding(8.dp)
+                                        .background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(4.dp))
+                                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
+
+                        // Title field
+                        OutlinedTextField(
+                            value = videoTitle,
+                            onValueChange = { videoTitle = it },
+                            label = { Text("Titulo del video") },
+                            modifier = Modifier.fillMaxWidth(),
+                            maxLines = 1,
+                            enabled = !isPosting && selectedVideo != null
+                        )
+
+                        // Description field
+                        OutlinedTextField(
+                            value = videoDescription,
+                            onValueChange = { videoDescription = it },
+                            label = { Text("Descripcion del video") },
+                            modifier = Modifier.fillMaxWidth(),
+                            maxLines = 3,
+                            enabled = !isPosting && selectedVideo != null
+                        )
                     }
-                }
-                if (error.isNotBlank()) {
-                    Text(error, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+
+                    // ─── POLL post fields (placeholder) ───
+                    if (postType == "poll") {
+                        Text(
+                            "Creacion de encuestas proximamente",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    if (isPosting) {
+                        Column(modifier = Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+                            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(uploadProgress, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                    if (error.isNotBlank()) {
+                        Text(error, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                    }
                 }
             }
         },
@@ -461,8 +618,9 @@ fun CreatePostDialog(
             TextButton(
                 onClick = {
                     if (isPosting) return@TextButton
-                    when {
-                        selectedVideo != null -> {
+                    when (postType) {
+                        "video" -> {
+                            if (selectedVideo == null) { error = "Selecciona un video"; return@TextButton }
                             isPosting = true; error = ""
                             coroutineScope.launch {
                                 try {
@@ -472,15 +630,38 @@ fun CreatePostDialog(
                                     val inputStream = context.contentResolver.openInputStream(selectedVideo)
                                     if (inputStream == null) { error = "No se pudo abrir el video"; isPosting = false; return@launch }
                                     val bytes = inputStream.readBytes(); inputStream.close()
-                                    val videoPart = okhttp3.MultipartBody.Part.createFormData("file", "video.mp4", okhttp3.RequestBody.create("video/*".toMediaType(), bytes))
-                                    val response = AusoApiClient.api.createVideoPost("Bearer $token", videoPart)
+                                    val videoPart = okhttp3.MultipartBody.Part.createFormData(
+                                        "file",
+                                        "video.mp4",
+                                        okhttp3.RequestBody.create("video/*".toMediaType(), bytes)
+                                    )
+                                    // Build multipart parts: video file + optional text fields
+                                    val parts = mutableListOf(videoPart)
+                                    if (videoTitle.isNotBlank()) {
+                                        parts.add(
+                                            okhttp3.MultipartBody.Part.createFormData(
+                                                "title", videoTitle,
+                                                okhttp3.RequestBody.create("text/plain".toMediaType(), videoTitle)
+                                            )
+                                        )
+                                    }
+                                    if (videoDescription.isNotBlank()) {
+                                        parts.add(
+                                            okhttp3.MultipartBody.Part.createFormData(
+                                                "description", videoDescription,
+                                                okhttp3.RequestBody.create("text/plain".toMediaType(), videoDescription)
+                                            )
+                                        )
+                                    }
+                                    val response = AusoApiClient.api.createVideoPost("Bearer $token", parts)
                                     if (response.isSuccessful) { uploadProgress = "Publicado!"; onPostCreated(); onDismiss() }
                                     else { error = "Error al publicar video: ${response.code()}" }
                                 } catch (e: Exception) { error = "Error: ${e.message}" }
                                 finally { isPosting = false }
                             }
                         }
-                        selectedImages.isNotEmpty() -> {
+                        "image" -> {
+                            if (selectedImages.isEmpty()) { error = "Selecciona al menos una imagen"; return@TextButton }
                             isPosting = true; error = ""
                             coroutineScope.launch {
                                 try {
@@ -499,7 +680,8 @@ fun CreatePostDialog(
                                 finally { isPosting = false }
                             }
                         }
-                        content.isNotBlank() -> {
+                        "text" -> {
+                            if (content.isBlank()) { error = "Escribe algo"; return@TextButton }
                             isPosting = true; error = ""
                             coroutineScope.launch {
                                 try {
@@ -515,7 +697,12 @@ fun CreatePostDialog(
                         }
                     }
                 },
-                enabled = !isPosting && (content.isNotBlank() || selectedImages.isNotEmpty() || selectedVideo != null),
+                enabled = !isPosting && postType != null && when (postType) {
+                    "text" -> content.isNotBlank()
+                    "image" -> selectedImages.isNotEmpty()
+                    "video" -> selectedVideo != null
+                    else -> false
+                },
                 colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.primary)
             ) { Text(if (isPosting) "Publicando..." else "Publicar") }
         },
@@ -523,6 +710,29 @@ fun CreatePostDialog(
         containerColor = MaterialTheme.colorScheme.surface,
         shape = RoundedCornerShape(16.dp)
     )
+}
+
+/** Pill-style button used in the post type picker. */
+@Composable
+private fun PostTypeChip(
+    label: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    onClick: () -> Unit
+) {
+    OutlinedButton(
+        onClick = onClick,
+        modifier = modifier,
+        enabled = enabled,
+        contentPadding = PaddingValues(vertical = 14.dp)
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Icon(icon, contentDescription = null, modifier = Modifier.size(24.dp))
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(label, fontSize = 12.sp)
+        }
+    }
 }
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -697,10 +907,6 @@ fun PostCard(
 
         // Video player — simplified: tap to open detail overlay
         if (post.postType == "video" && postResponse.video != null) {
-            // Derive a display title from the original filename (strip extension)
-            val videoTitle = postResponse.video.originalFilename
-                .substringBeforeLast('.')
-                .takeIf { it.isNotBlank() && it != postResponse.video.originalFilename }
             VideoPlayerFeed(
                 postId = post.id,
                 videoUrl = AusoApiClient.fullUrl(postResponse.video.hlsMasterPlaylistUrl) ?: "",
@@ -716,8 +922,9 @@ fun PostCard(
                 onClick = onVideoClick,
                 onPlayerRef = onVideoPlayerRef,
                 isOverlayShowing = isVideoOverlayShowing,
-                title = videoTitle,
-                description = post.content.takeIf { it.isNotBlank() }
+                title = postResponse.video.title.takeIf { it.isNotBlank() },
+                description = postResponse.video.description.takeIf { it.isNotBlank() }
+                    ?: post.content.takeIf { it.isNotBlank() }
             )
         }
 
