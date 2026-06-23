@@ -60,6 +60,13 @@ interface AusoApi {
         @Query("post_type") postType: String? = null
     ): Response<FeedResponse>
 
+    @GET("api/v1/posts/recommended")
+    suspend fun getRecommendedFeed(
+        @Header("Authorization") token: String,
+        @Query("page") page: Int? = null,
+        @Query("limit") limit: Int? = null
+    ): Response<FeedResponse>
+
     @GET("api/v1/posts/{id}")
     suspend fun getPost(
         @Header("Authorization") token: String,
@@ -194,4 +201,47 @@ interface AusoApi {
         @Path("communityId") communityId: String,
         @Body request: CreateChannelRequest
     ): Response<Channel>
+
+    // ========== DISCOVERY ==========
+    @GET("api/v1/categories")
+    suspend fun listCategories(
+        @Header("Authorization") token: String
+    ): Response<List<Category>>
+
+    @POST("api/v1/users/me/interests")
+    suspend fun setInterests(
+        @Header("Authorization") token: String,
+        @Body request: SetInterestsRequest
+    ): Response<List<UserInterest>>
+
+    @GET("api/v1/users/me/interests")
+    suspend fun getMyInterests(
+        @Header("Authorization") token: String
+    ): Response<List<UserInterest>>
+
+    @GET("api/v1/hashtags/search")
+    suspend fun searchHashtags(
+        @Header("Authorization") token: String,
+        @Query("q") query: String
+    ): Response<List<Hashtag>>
+
+    @GET("api/v1/hashtags/trending")
+    suspend fun trendingHashtags(
+        @Header("Authorization") token: String
+    ): Response<List<HashtagWithCount>>
+
+    @GET("api/v1/hashtags/{tag}/posts")
+    suspend fun getPostsByHashtag(
+        @Header("Authorization") token: String,
+        @Path("tag") tag: String,
+        @Query("page") page: Int? = null,
+        @Query("limit") limit: Int? = null
+    ): Response<FeedResponse>
+
+    @POST("api/v1/posts/{id}/impression")
+    suspend fun recordImpression(
+        @Header("Authorization") token: String,
+        @Path("id") postId: String,
+        @Body request: CreateImpressionRequest
+    ): Response<MessageResponse>
 }

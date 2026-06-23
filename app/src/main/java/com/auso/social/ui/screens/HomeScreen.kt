@@ -185,13 +185,18 @@ fun HomeScreen(
         }
     }
 
-    // Load feed
+    // Load feed — uses the recommendation algorithm for "Recomendado", the standard
+    // chronological followees+self feed for "Amigos", and the global feed for "Explorar".
     LaunchedEffect(tabName, refreshTrigger) {
         isLoading = true
         try {
             val token = AusoApiClient.getToken()
             if (token != null) {
-                val response = AusoApiClient.api.getFeed("Bearer $token")
+                val response = when (tabName) {
+                    "Recomendado" -> AusoApiClient.api.getRecommendedFeed("Bearer $token")
+                    "Explorar" -> AusoApiClient.api.getFeed("Bearer $token", postType = null)
+                    else -> AusoApiClient.api.getFeed("Bearer $token")
+                }
                 if (response.isSuccessful) {
                     val feed = response.body()
                     posts = feed?.posts ?: emptyList()

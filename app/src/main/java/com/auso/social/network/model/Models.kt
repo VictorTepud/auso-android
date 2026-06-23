@@ -308,6 +308,43 @@ data class FollowResponse(
     val following: Boolean
 )
 
+// ========== DISCOVERY (hashtags, categories, interests) ==========
+data class Category(
+    val id: String,
+    val name: String,
+    val slug: String,
+    val icon: String = "",
+    @SerializedName("created_at") val createdAt: String = ""
+)
+
+data class Hashtag(
+    val id: String,
+    val tag: String,
+    @SerializedName("usage_count") val usageCount: Long = 0,
+    @SerializedName("created_at") val createdAt: String = ""
+)
+
+data class HashtagWithCount(
+    val tag: String,
+    @SerializedName("usage_count") val usageCount: Long = 0
+)
+
+data class UserInterest(
+    val id: String,
+    @SerializedName("user_id") val userId: String,
+    @SerializedName("category_id") val categoryId: String,
+    val weight: Double = 1.0,
+    @SerializedName("created_at") val createdAt: String = ""
+)
+
+data class SetInterestsRequest(
+    @SerializedName("category_ids") val categoryIds: List<String>
+)
+
+data class CreateImpressionRequest(
+    @SerializedName("impression_type") val impressionType: String // view|like|comment|share|skip
+)
+
 // ========== GENERIC ==========
 data class MessageResponse(
     val message: String

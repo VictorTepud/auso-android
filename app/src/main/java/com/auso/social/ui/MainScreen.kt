@@ -102,6 +102,7 @@ fun MainScreen(
     var viewingUsername by remember { mutableStateOf("") }
     var showCreatePostDialog by remember { mutableStateOf(false) }
     var refreshTrigger by remember { mutableIntStateOf(0) }
+    var viewingHashtag by remember { mutableStateOf<String?>(null) }
 
     // Image picker for post creation
     var postImageUris by remember { mutableStateOf<List<Uri>>(emptyList()) }
@@ -143,6 +144,19 @@ fun MainScreen(
         UserProfileScreen(
             username = viewingUsername,
             onBack = { showUserProfileScreen = false },
+            onAuthorClick = { username ->
+                viewingUsername = username
+                showUserProfileScreen = true
+            }
+        )
+        return
+    }
+
+    // Hashtag feed overlay — shown when the user taps a hashtag from search
+    if (viewingHashtag != null) {
+        HashtagFeedScreen(
+            tag = viewingHashtag!!,
+            onBack = { viewingHashtag = null },
             onAuthorClick = { username ->
                 viewingUsername = username
                 showUserProfileScreen = true
@@ -221,7 +235,15 @@ fun MainScreen(
                         }
                     )
                 }
-                1 -> SearchScreen()
+                1 -> SearchScreen(
+                    onUserClick = { username ->
+                        viewingUsername = username
+                        showUserProfileScreen = true
+                    },
+                    onHashtagClick = { tag ->
+                        viewingHashtag = tag
+                    }
+                )
                 2 -> VideosScreen(
                     isGlobalMuted = isGlobalMuted,
                     onMuteChanged = { muted ->

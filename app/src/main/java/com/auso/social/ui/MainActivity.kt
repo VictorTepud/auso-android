@@ -22,6 +22,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.auso.social.data.ThemeManager
 import com.auso.social.ui.navigation.Routes
+import com.auso.social.ui.screens.InterestsScreen
 import com.auso.social.ui.screens.LoginScreen
 import com.auso.social.ui.screens.RegisterScreen
 import com.auso.social.ui.theme.AUSOTheme
@@ -124,8 +125,27 @@ fun AUSOApp(themeManager: ThemeManager) {
                     navController.popBackStack()
                 },
                 onRegisterSuccess = {
-                    navController.navigate(Routes.MAIN) {
+                    // After register, send the user to pick interests (mandatory ≥1 category)
+                    navController.navigate(Routes.INTERESTS) {
                         popUpTo(Routes.REGISTER) { inclusive = true }
+                    }
+                }
+            )
+        }
+
+        composable(
+            route = Routes.INTERESTS,
+            enterTransition = {
+                slideIntoContainer(
+                    towards = AnimatedContentTransitionScope.SlideDirection.Left,
+                    animationSpec = tween(300)
+                )
+            }
+        ) {
+            InterestsScreen(
+                onComplete = {
+                    navController.navigate(Routes.MAIN) {
+                        popUpTo(Routes.INTERESTS) { inclusive = true }
                     }
                 }
             )
