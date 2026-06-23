@@ -1329,6 +1329,7 @@ private fun formatCount(count: Long): String {
  * - When playing: creates ExoPlayer, renders video surface, shows progress bar
  * This prevents all videos from loading/buffering when scrolling the feed.
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun VideoPlayerFeed(
     postId: String,
