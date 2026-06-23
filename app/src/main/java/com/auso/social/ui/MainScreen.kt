@@ -232,6 +232,9 @@ fun MainScreen(
                         isTopBarVisible = isTopBarVisible,
                         onVideoOverlayChanged = { isOpen ->
                             isVideoOverlayOpen = isOpen
+                        },
+                        onHashtagClick = { tag ->
+                            viewingHashtag = tag
                         }
                     )
                 }

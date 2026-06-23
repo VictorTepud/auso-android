@@ -50,6 +50,7 @@ import coil.compose.AsyncImage
 import com.auso.social.network.AusoApiClient
 import com.auso.social.ui.components.MagicProgressBar
 import com.auso.social.network.model.CreateTextPostRequest
+import com.auso.social.network.model.CreateImpressionRequest
 import com.auso.social.network.model.PostResponse
 import com.auso.social.network.model.UserProfile
 import com.auso.social.viewmodel.AuthViewModel
@@ -74,7 +75,8 @@ fun HomeScreen(
     onMuteChanged: (Boolean) -> Unit = {},
     topBarHeightDp: androidx.compose.ui.unit.Dp = 112.dp,
     isTopBarVisible: Boolean = true,
-    onVideoOverlayChanged: (Boolean) -> Unit = {}
+    onVideoOverlayChanged: (Boolean) -> Unit = {},
+    onHashtagClick: (String) -> Unit = {}
 ) {
     var posts by remember { mutableStateOf<List<PostResponse>>(emptyList()) }
     var isLoading by remember { mutableStateOf(false) }
@@ -290,6 +292,14 @@ fun HomeScreen(
                                                     it.copy(isLiked = newLiked, likesCount = newCount)
                                                 } else it
                                             }
+                                            // Train the recommender: a like is a strong positive signal
+                                            try {
+                                                AusoApiClient.api.recordImpression(
+                                                    "Bearer $token",
+                                                    postResponse.post.id,
+                                                    CreateImpressionRequest(impressionType = "like")
+                                                )
+                                            } catch (_: Exception) {}
                                         }
                                     }
                                 } catch (_: Exception) {}
@@ -297,6 +307,37 @@ fun HomeScreen(
                         },
                         onCommentClick = { /* TODO: Comments */ },
                         onAuthorClick = onAuthorClick,
+                        onHashtagClick = onHashtagClick,
+                        onShareClick = {
+                            // Train the recommender: a share is the strongest positive signal
+                            coroutineScope.launch {
+                                try {
+                                    val token = AusoApiClient.getToken()
+                                    if (token != null) {
+                                        AusoApiClient.api.recordImpression(
+                                            "Bearer $token",
+                                            postResponse.post.id,
+                                            CreateImpressionRequest(impressionType = "share")
+                                        )
+                                    }
+                                } catch (_: Exception) {}
+                            }
+                        },
+                        onWatched = {
+                            // Train the recommender: a 3s+ view is a mild positive signal
+                            coroutineScope.launch {
+                                try {
+                                    val token = AusoApiClient.getToken()
+                                    if (token != null) {
+                                        AusoApiClient.api.recordImpression(
+                                            "Bearer $token",
+                                            postResponse.post.id,
+                                            CreateImpressionRequest(impressionType = "view")
+                                        )
+                                    }
+                                } catch (_: Exception) {}
+                            }
+                        },
                         isCurrentlyPlaying = currentlyPlayingVideoId == postResponse.post.id,
                         onVideoPlayRequest = { videoId ->
                             onVideoPlayChanged(videoId)
@@ -907,6 +948,37 @@ private fun PostTypeChip(
 }
 
 /**
+ * Small clickable pill that displays a #hashtag and invokes [onClick] when tapped.
+ * Used in PostCard to let users navigate to the hashtag feed.
+ */
+@Composable
+fun HashtagChip(
+    tag: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    chipColor: Color = MaterialTheme.colorScheme.primary,
+    textColor: Color = MaterialTheme.colorScheme.onPrimary
+) {
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(12.dp))
+            .background(chipColor.copy(alpha = 0.12f))
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null
+            ) { onClick() }
+            .padding(horizontal = 8.dp, vertical = 3.dp)
+    ) {
+        Text(
+            text = "#$tag",
+            color = chipColor,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Medium
+        )
+    }
+}
+
+/**
  * Renders a video's title and description BELOW the video (not as an overlay).
  *
  * - Title is shown in full (single line, ellipsized).
@@ -995,7 +1067,10 @@ fun PostCard(
     onVideoPlayerRef: (androidx.media3.exoplayer.ExoPlayer?) -> Unit = {},
     isVideoOverlayShowing: Boolean = false,
     currentUserId: String? = null,
-    videoResumePosition: Long = 0L
+    videoResumePosition: Long = 0L,
+    onHashtagClick: (String) -> Unit = {},
+    onShareClick: () -> Unit = {},
+    onWatched: () -> Unit = {}
 ) {
     val post = postResponse.post
     val context = LocalContext.current
@@ -1109,6 +1184,18 @@ fun PostCard(
             Text(text = post.content, style = MaterialTheme.typography.bodyLarge, color = onCardColor, maxLines = 10, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(horizontal = 12.dp))
         }
 
+        // Hashtags — clickable chips that open the hashtag feed
+        if (postResponse.hashtags.isNotEmpty()) {
+            LazyRow(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+            ) {
+                items(postResponse.hashtags) { tag ->
+                    HashtagChip(tag = tag, onClick = { onHashtagClick(tag) }, chipColor = MaterialTheme.colorScheme.primary, textColor = MaterialTheme.colorScheme.onPrimary)
+                }
+            }
+        }
+
         // Post images
         if (postResponse.images.isNotEmpty()) {
             Spacer(modifier = Modifier.height(8.dp))
@@ -1169,7 +1256,8 @@ fun PostCard(
                 onPlayerRef = onVideoPlayerRef,
                 isOverlayShowing = isVideoOverlayShowing,
                 resumePosition = videoResumePosition,
-                onDoubleClick = onLikeClick
+                onDoubleClick = onLikeClick,
+                onWatched = onWatched
             )
 
             // Video title + description BELOW the video (with "Ver más" expansion)
@@ -1267,6 +1355,8 @@ fun PostCard(
                             type = "text/plain"
                         }
                         context.startActivity(Intent.createChooser(shareIntent, "Compartir via"))
+                        // Notify the parent so it can record the share impression
+                        onShareClick()
                     }
                     .padding(vertical = 6.dp),
                 horizontalArrangement = Arrangement.Center
@@ -1354,12 +1444,16 @@ fun VideoPlayerFeed(
     title: String? = null,
     description: String? = null,
     resumePosition: Long = 0L,
-    onDoubleClick: () -> Unit = {}
+    onDoubleClick: () -> Unit = {},
+    onWatched: () -> Unit = {}
 ) {
     val context = LocalContext.current
     var isPlaying by remember { mutableStateOf(false) }
     var currentPosition by remember { mutableLongStateOf(0L) }
     var totalDuration by remember { mutableLongStateOf(0L) }
+    // Track whether we already fired the "watched" signal for this playback session
+    // (avoid spamming the backend with view impressions every 200ms)
+    var watchedFired by remember { mutableStateOf(false) }
     val configuration = LocalConfiguration.current
     val screenWidthPx = configuration.screenWidthDp
     val screenHeightPx = configuration.screenHeightDp
@@ -1409,6 +1503,11 @@ fun VideoPlayerFeed(
             while (isPlaying) {
                 currentPosition = exoPlayer.currentPosition.coerceAtLeast(0L)
                 if (totalDuration <= 0L) totalDuration = exoPlayer.duration.coerceAtLeast(0L)
+                // Fire the "viewed" impression once the user has watched ≥3 seconds
+                if (!watchedFired && currentPosition >= 3000L) {
+                    watchedFired = true
+                    onWatched()
+                }
                 kotlinx.coroutines.delay(200)
             }
         }

@@ -108,7 +108,8 @@ data class PostResponse(
     @SerializedName("author_display_name") val authorDisplayName: String = "",
     @SerializedName("author_profile_photo") val authorProfilePhoto: String? = null,
     @SerializedName("author_bio") val authorBio: String? = null,
-    @SerializedName("is_following_author") val isFollowingAuthor: Boolean = false
+    @SerializedName("is_following_author") val isFollowingAuthor: Boolean = false,
+    val hashtags: List<String> = emptyList()
 )
 
 data class FeedResponse(
