@@ -76,16 +76,13 @@ fun MagicProgressBar(
 
     // Thread definitions: color, amplitude, frequency, phase, thickness, depthFreq, depthPhase
     // depthFreq & depthPhase control the "weave depth" — which thread is in front at any x position
+    // Colors: yellow, blue, red, white (per spec)
     val threads: List<ThreadSpec> = remember {
         listOf(
-            ThreadSpec(Color(0xFFFF1744), 0.9f, 3.0f, 0.0f, 1.8f, 1.5f, 0.0f),   // Vivid red
-            ThreadSpec(Color(0xFFFF6D00), 0.7f, 2.5f, 1.0f, 1.5f, 2.0f, 0.8f),   // Vivid orange
-            ThreadSpec(Color(0xFFFF1493), 0.8f, 3.5f, 2.0f, 1.4f, 1.8f, 1.6f),   // Deep pink
-            ThreadSpec(Color(0xFFD500F9), 0.6f, 2.0f, 0.5f, 1.6f, 2.2f, 2.4f),   // Vivid purple
-            ThreadSpec(Color(0xFF651FFF), 0.85f, 2.8f, 1.5f, 1.5f, 1.3f, 3.2f),  // Deep violet
-            ThreadSpec(Color(0xFF2979FF), 0.75f, 3.2f, 3.0f, 1.7f, 1.7f, 4.0f),  // Vivid blue
-            ThreadSpec(Color(0xFF00E5FF), 0.65f, 2.6f, 2.5f, 1.3f, 2.5f, 4.8f),  // Vivid cyan
-            ThreadSpec(Color(0xFF7C4DFF), 0.5f, 3.8f, 0.8f, 1.1f, 1.9f, 5.6f),   // Electric violet
+            ThreadSpec(Color(0xFFFFEB3B), 0.9f, 3.0f, 0.0f, 1.8f, 1.5f, 0.0f),   // Yellow
+            ThreadSpec(Color(0xFF2196F3), 0.85f, 2.8f, 1.5f, 1.6f, 1.3f, 3.2f),  // Blue
+            ThreadSpec(Color(0xFFFF1744), 0.9f, 3.2f, 3.0f, 1.7f, 1.7f, 4.0f),   // Red
+            ThreadSpec(Color(0xFFFFFFFF), 0.7f, 2.5f, 1.0f, 1.5f, 2.0f, 0.8f),   // White
         )
     }
 

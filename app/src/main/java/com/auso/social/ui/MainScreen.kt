@@ -256,70 +256,75 @@ fun MainScreen(
                         0 -> {
                             TopAppBar(
                                 windowInsets = WindowInsets.statusBars,
-                                navigationIcon = {
-                                    // Circular + button (left side) — blue outline, no fill
-                                    Box(
-                                        modifier = Modifier
-                                            .padding(start = 12.dp)
-                                            .size(32.dp)
-                                            .clip(CircleShape)
-                                            .border(
-                                                width = 2.dp,
-                                                color = MaterialTheme.colorScheme.primary,
-                                                shape = CircleShape
-                                            )
-                                            .clickable { showCreatePostDialog = true },
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Icon(
-                                            Icons.Filled.Add,
-                                            contentDescription = "Crear publicación",
-                                            tint = MaterialTheme.colorScheme.primary,
-                                            modifier = Modifier.size(20.dp)
-                                        )
-                                    }
-                                },
                                 title = {
-                                    Box {
-                                        Row(
-                                            modifier = Modifier
-                                                .clickable { showFeedMenu = true }
-                                                .padding(vertical = 4.dp),
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Text(
-                                                text = feedTabs[selectedFeedTab],
-                                                color = MaterialTheme.colorScheme.onSurface,
-                                                fontWeight = FontWeight.SemiBold,
-                                                fontSize = 18.sp
-                                            )
-                                            Icon(
-                                                Icons.Filled.ArrowDropDown,
-                                                contentDescription = "Cambiar filtro",
-                                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                modifier = Modifier.size(20.dp)
-                                            )
-                                        }
-                                        DropdownMenu(
-                                            expanded = showFeedMenu,
-                                            onDismissRequest = { showFeedMenu = false }
-                                        ) {
-                                            feedTabs.forEachIndexed { index, tab ->
-                                                DropdownMenuItem(
-                                                    text = {
-                                                        Text(
-                                                            tab,
-                                                            fontWeight = if (index == selectedFeedTab) FontWeight.Bold else FontWeight.Normal,
-                                                            color = if (index == selectedFeedTab) MaterialTheme.colorScheme.primary
-                                                            else MaterialTheme.colorScheme.onSurface
-                                                        )
-                                                    },
-                                                    onClick = {
-                                                        selectedFeedTab = index
-                                                        showFeedMenu = false
-                                                    }
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        // Dropdown selector (Amigos / Recomendado / Explorar) — comes first
+                                        Box {
+                                            Row(
+                                                modifier = Modifier
+                                                    .clickable { showFeedMenu = true }
+                                                    .padding(vertical = 4.dp),
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Text(
+                                                    text = feedTabs[selectedFeedTab],
+                                                    color = MaterialTheme.colorScheme.onSurface,
+                                                    fontWeight = FontWeight.SemiBold,
+                                                    fontSize = 18.sp
+                                                )
+                                                Icon(
+                                                    Icons.Filled.ArrowDropDown,
+                                                    contentDescription = "Cambiar filtro",
+                                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    modifier = Modifier.size(20.dp)
                                                 )
                                             }
+                                            DropdownMenu(
+                                                expanded = showFeedMenu,
+                                                onDismissRequest = { showFeedMenu = false }
+                                            ) {
+                                                feedTabs.forEachIndexed { index, tab ->
+                                                    DropdownMenuItem(
+                                                        text = {
+                                                            Text(
+                                                                tab,
+                                                                fontWeight = if (index == selectedFeedTab) FontWeight.Bold else FontWeight.Normal,
+                                                                color = if (index == selectedFeedTab) MaterialTheme.colorScheme.primary
+                                                                else MaterialTheme.colorScheme.onSurface
+                                                            )
+                                                        },
+                                                        onClick = {
+                                                            selectedFeedTab = index
+                                                            showFeedMenu = false
+                                                        }
+                                                    )
+                                                }
+                                            }
+                                        }
+
+                                        Spacer(modifier = Modifier.width(10.dp))
+
+                                        // + button — sits right after the dropdown selector
+                                        Box(
+                                            modifier = Modifier
+                                                .size(26.dp)
+                                                .clip(CircleShape)
+                                                .border(
+                                                    width = 1.5.dp,
+                                                    color = MaterialTheme.colorScheme.primary,
+                                                    shape = CircleShape
+                                                )
+                                                .clickable { showCreatePostDialog = true },
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(
+                                                Icons.Filled.Add,
+                                                contentDescription = "Crear publicación",
+                                                tint = MaterialTheme.colorScheme.primary,
+                                                modifier = Modifier.size(16.dp)
+                                            )
                                         }
                                     }
                                 },

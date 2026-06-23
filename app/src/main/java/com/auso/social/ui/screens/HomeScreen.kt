@@ -32,6 +32,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -696,6 +697,10 @@ fun PostCard(
 
         // Video player — simplified: tap to open detail overlay
         if (post.postType == "video" && postResponse.video != null) {
+            // Derive a display title from the original filename (strip extension)
+            val videoTitle = postResponse.video.originalFilename
+                .substringBeforeLast('.')
+                .takeIf { it.isNotBlank() && it != postResponse.video.originalFilename }
             VideoPlayerFeed(
                 postId = post.id,
                 videoUrl = AusoApiClient.fullUrl(postResponse.video.hlsMasterPlaylistUrl) ?: "",
@@ -710,7 +715,9 @@ fun PostCard(
                 onMuteChanged = onMuteChanged,
                 onClick = onVideoClick,
                 onPlayerRef = onVideoPlayerRef,
-                isOverlayShowing = isVideoOverlayShowing
+                isOverlayShowing = isVideoOverlayShowing,
+                title = videoTitle,
+                description = post.content.takeIf { it.isNotBlank() }
             )
         }
 
@@ -875,7 +882,9 @@ fun VideoPlayerFeed(
     onMuteChanged: (Boolean) -> Unit = {},
     onClick: () -> Unit = {},
     onPlayerRef: (androidx.media3.exoplayer.ExoPlayer?) -> Unit = {},
-    isOverlayShowing: Boolean = false
+    isOverlayShowing: Boolean = false,
+    title: String? = null,
+    description: String? = null
 ) {
     val context = LocalContext.current
     var isPlaying by remember { mutableStateOf(false) }
@@ -973,14 +982,13 @@ fun VideoPlayerFeed(
                     ) { onClick() }
             )
 
-            // Mute button
+            // Mute button — icon only, no background
             IconButton(
                 onClick = { onMuteChanged(!isMuted) },
                 modifier = Modifier
                     .align(Alignment.TopEnd)
                     .padding(8.dp)
                     .size(32.dp)
-                    .background(Color.Black.copy(alpha = 0.4f), CircleShape)
             ) {
                 Icon(
                     if (isMuted) Icons.Filled.VolumeOff else Icons.Filled.VolumeUp,
@@ -988,6 +996,45 @@ fun VideoPlayerFeed(
                     tint = Color.White,
                     modifier = Modifier.size(18.dp)
                 )
+            }
+
+            // Video title + description overlay (bottom-left, above progress bar)
+            if (!title.isNullOrBlank() || !description.isNullOrBlank()) {
+                Column(
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .fillMaxWidth()
+                        .background(
+                            Brush.verticalGradient(
+                                colors = listOf(
+                                    Color.Transparent,
+                                    Color.Black.copy(alpha = 0.55f)
+                                )
+                            )
+                        )
+                        .padding(horizontal = 12.dp, vertical = 8.dp)
+                ) {
+                    if (!title.isNullOrBlank()) {
+                        Text(
+                            text = title,
+                            color = Color.White,
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 15.sp,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                    if (!description.isNullOrBlank()) {
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = description,
+                            color = Color.White.copy(alpha = 0.85f),
+                            fontSize = 13.sp,
+                            maxLines = 3,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
             }
 
             // Progress bar — animated magical power waves
@@ -1054,6 +1101,45 @@ fun VideoPlayerFeed(
                         .background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(4.dp))
                         .padding(horizontal = 6.dp, vertical = 2.dp)
                 )
+            }
+
+            // Video title + description overlay (bottom-left)
+            if (!title.isNullOrBlank() || !description.isNullOrBlank()) {
+                Column(
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .fillMaxWidth()
+                        .background(
+                            Brush.verticalGradient(
+                                colors = listOf(
+                                    Color.Transparent,
+                                    Color.Black.copy(alpha = 0.6f)
+                                )
+                            )
+                        )
+                        .padding(horizontal = 12.dp, vertical = 8.dp)
+                ) {
+                    if (!title.isNullOrBlank()) {
+                        Text(
+                            text = title,
+                            color = Color.White,
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 15.sp,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                    if (!description.isNullOrBlank()) {
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = description,
+                            color = Color.White.copy(alpha = 0.85f),
+                            fontSize = 13.sp,
+                            maxLines = 3,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
             }
         }
     }
